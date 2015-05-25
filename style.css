@@ -7,14 +7,16 @@ table {
 	margin: 15em auto 0;
 }
 
-td {
+td:first-child {
 	width: 600px;
-	height: 30px;
-	border: 1px solid blue;
+	height: 15px;
 	position: relative;
+}
+td:last-child {
+	width: 200px;
+	padding: 0 0 0 1em;
 }
 td svg {
 	position: absolute;
-	bottom: 0;
-	border: 1px solid red;
+	bottom: 0.5em;
 }
