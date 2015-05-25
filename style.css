@@ -1,0 +1,20 @@
+html {
+	font-family: "segoe ui", helvetica, sans-serif;
+}
+
+table {
+	font-size: 0.8em;
+	margin: 15em auto 0;
+}
+
+td {
+	width: 600px;
+	height: 30px;
+	border: 1px solid blue;
+	position: relative;
+}
+td svg {
+	position: absolute;
+	bottom: 0;
+	border: 1px solid red;
+}
