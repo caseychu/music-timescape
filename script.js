@@ -173,8 +173,8 @@ function processData(data) {
 		artists: Object.keys(artists).map(function (key) { return artists[key]; }),
 		weeks: data.map(function (week) {
 			return !isEmptyWeek(week) && [
-				week['weeklyartistchart']['from'],
-				week['weeklyartistchart']['to']
+				new Date(week['weeklyartistchart']['@attr']['from'] * 1000),
+				new Date(week['weeklyartistchart']['@attr']['to'] * 1000)
 			];
 		})
 	};
@@ -183,8 +183,7 @@ function processData(data) {
 window.onload = function () {
 	var data = processData(JSON.parse(localStorage.lastfmdata));
 	data.artists = data.artists
-		.filter(function (artist) { return artist.maxPlays > 30; })
-		.filter(function (artist) { return artist.totalPlays > 10; })
+		.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50); })
 		.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); })
 		//.slice(0, 15);
 
@@ -194,11 +193,30 @@ window.onload = function () {
 	var totalHeight = paddingTop + 15 * data.artists.length;
 	var scale = 0.6;
 	
-	var i = 0;
-	var group = d3
+	var timeline = d3
 		.select('#timeline')
-		.attr('width', width + 200)
-		.attr('height', totalHeight)
+		.attr('width', width + 150)
+		.attr('height', totalHeight);
+	
+	timeline
+		.selectAll('text')
+		.data(data.weeks)
+		.enter()
+		//.filter(function (week, weekNumber) { return weekNumber % 15 == 0; })
+		.append('text')
+		.attr('x', function (week, weekNumber) { return -15 + weekNumber * (width / (data.weeks.length - 1)); })
+		.attr('y', paddingTop - 15)
+		.attr('fill', '#666')
+		.text(function (week, weekNumber) {
+			return week[0].getMonth() === 0 && week[0].getDate() < 7 ? week[0].getFullYear() : '';
+		});
+	
+	var line = d3.svg.line()
+		.x(function (plays, weekNumber) { return weekNumber * (width / (data.weeks.length - 1)); })
+		.y(function (plays, weekNumber) { return -scale * plays || 0; })
+		//.interpolate('step-before');
+		.interpolate('basis');
+	var artist = timeline
 		.selectAll('g')
 		.data(data.artists)
 		.enter()
@@ -206,13 +224,7 @@ window.onload = function () {
 		.attr('transform', function (artist, artistNumber) {
 			return 'translate(0, ' + (height * artistNumber + paddingTop) + ')';
 		});
-		
-	var line = d3.svg.line()
-		.x(function (plays, weekNumber) { return weekNumber * (width / (data.weeks.length - 1)); })
-		.y(function (plays, weekNumber) { return -scale * plays || 0; })
-		//.interpolate('step-before');
-		.interpolate('basis');
-	group.append('path')
+	artist.append('path')
 		.attr('fill', function (artist, i) { return 'hsla(' + (360-Math.floor(i * 31 % 360)) + ', 100%, 80%, 0.7)'; })
 		.attr('stroke', '#666')
 		//.attr('stroke', function (artist, i) { return 'hsla(' + (360-Math.floor(i * 37 % 360)) + ', 100%, 30%, 0.7)'; });
@@ -226,9 +238,10 @@ window.onload = function () {
 		.attr('transform', 'scale(1, 1)');
 		*/
 	
-	group
+	artist
 		.append('text')
-		.attr('x', width + 10)
-		.attr('y', '2px')
-		.text(function (artist) { return artist.name; })
+		.attr('x', width + 15)
+		.attr('y', 3)
+		.attr('fill', '#666')
+		.text(function (artist) { return artist.name; });
 };
