@@ -59,6 +59,7 @@ Promise.parallel = function (n, arr, progress) {
 				arr[index]()
 					.catch(function (error) {
 						// Just eat errors
+						console.error(error);
 						return error;
 					})
 					.then(function (value) {
@@ -108,7 +109,7 @@ function go() {
 		var charts = response['weeklychartlist']['chart'];
 		return Promise.parallel(
 			5,
-			charts.slice(350).map(function (chart) {
+			charts.map(function (chart) {
 				return function () {
 					return api({
 						'method': 'user.getweeklyartistchart',
@@ -135,11 +136,15 @@ function keyForWeek(week) {
 
 window.onload = function () {
 	var data = JSON.parse(localStorage.lastfmdata);
+	
+	data = data.slice(280);
 	var artists = {};
+	var weekCount = data.length;
 	data.forEach(function (week, weekNumber) {
-		if (!week || week.error) return;
+		if (!week || week['error'] || !week['weeklyartistchart']['artist'])
+			return;
 		week['weeklyartistchart']['artist'].forEach(function (artist) {
-			if (!artists[artist['mbid']])
+			if (!artists[artist['mbid']]) {
 				artists[artist['mbid']] = {
 					name: artist['name'],
 					url: artist['url'],
@@ -148,6 +153,8 @@ window.onload = function () {
 					maxPlays: -1,
 					maxWeek: null,
 				};
+				artists[artist['mbid']].plays.length = weekCount;
+			}
 			
 			artists[artist['mbid']].plays[weekNumber] = +artist['playcount'];
 			artists[artist['mbid']].totalPlays += +artist['playcount'];
@@ -157,36 +164,46 @@ window.onload = function () {
 			}
 		});
 	});
-	var data = Object.keys(artists).map(function (key) { return artists[key]; })
+	
+	
+	var artists = Object.keys(artists).map(function (key) { return artists[key]; })
 		.filter(function (artist) { return artist.maxPlays > 30; })
-		.filter(function (artist) { return artist.totalPlays > 150; })
+		.filter(function (artist) { return artist.totalPlays > 10; })
 		.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); });
 
 	var width = 600;
-	var height = 200;
-	var line = d3.svg.line()
-		.x(function (plays, weekNumber) { return weekNumber * (width / data.length / 5); })
-		.y(function (plays, weekNumber) { return height - 0.4 * (plays || 0); })
-		//.interpolate('step-before');
-		.interpolate('basis');
-
-	var rows = d3
-		.select('#timeline')
-		.selectAll('tr')
-		.data(data)
-		.enter()
-		.append('tr');
+	var height = 15;
+	var paddingTop = 100;
+	var totalHeight = paddingTop + 15 * artists.length;
+	var scale = 0.4;
 	
 	var i = 0;
-	rows.append('td')
-		.append('svg')
-		.attr('width', width)
-		.attr('height', height)
-		.append('path')
-		.attr('d', function (artist) { return line([0].concat(artist.plays, [0])); })
+	var group = d3
+		.select('#timeline')
+		.attr('width', width + 200)
+		.attr('height', totalHeight)
+		.selectAll('g')
+		.data(artists)
+		.enter()
+		.append('g')
+		.attr('transform', function (artist, artistNumber) {
+			return 'translate(0, ' + (height * artistNumber + paddingTop) + ')';
+		});
+		
+	group.append('path')
+		.attr('d', function (artist, artistNumber) {
+			var line = d3.svg.line()
+				.x(function (plays, weekNumber) { return weekNumber * (width / weekCount); })
+				.y(function (plays, weekNumber) { return -scale * plays || 0; })
+				//.interpolate('step-before');
+				.interpolate('basis');
+			return line([0].concat(artist.plays, [0])); 
+		})
 		.attr('stroke', '#666')
-		.attr('fill', function () { return 'hsla(' + Math.floor(Math.random() * 360) + ', 100%, 80%, 0.7)'; });
+		.attr('fill', function (artist, i) { return 'hsla(' + Math.floor(i * 37 % 360) + ', 100%, 80%, 0.7)'; });
 	
-	rows.append('td')
+	group
+		.append('text')
+		.attr('x', width + 10)
 		.text(function (artist) { return artist.name; })
 };

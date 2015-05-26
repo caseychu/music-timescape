@@ -1,23 +1,12 @@
 html {
 	font-family: "segoe ui", helvetica, sans-serif;
+	text-align: center;
 }
 
-table {
-	font-size: 0.8em;
-	margin: 15em auto 0;
-}
-
-td:first-child {
-	width: 600px;
-	height: 10px;
-	position: relative;
-}
-td:last-child {
-	width: 200px;
-	padding: 0 0 0 0.5em;
+svg {
 	font-size: 9px;
 }
-td svg {
-	position: absolute;
-	bottom: 0.5em;
+
+svg g:hover {
+	cursor: pointer;
 }
