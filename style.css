@@ -4,7 +4,9 @@ html {
 }
 
 svg {
-	font-size: 9px;
+	font-size: 12px;
+	-webkit-user-select: none;
+	user-select: none;
 }
 
 svg g:hover {
