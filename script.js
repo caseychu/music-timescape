@@ -108,7 +108,7 @@ function go() {
 		var charts = response['weeklychartlist']['chart'];
 		return Promise.parallel(
 			5,
-			charts.slice(450, 500).map(function (chart) {
+			charts.slice(350).map(function (chart) {
 				return function () {
 					return api({
 						'method': 'user.getweeklyartistchart',
@@ -120,7 +120,7 @@ function go() {
 			}),
 			function (n, m, q) {
 				console.log(n + ' out of ' + m, (q - n) + ' running');
-				return delay(Math.random() * 1000);
+				//return delay(Math.random() * 1000);
 			}
 		);
 	}).then(function (data) {
@@ -137,6 +137,7 @@ window.onload = function () {
 	var data = JSON.parse(localStorage.lastfmdata);
 	var artists = {};
 	data.forEach(function (week, weekNumber) {
+		if (!week || week.error) return;
 		week['weeklyartistchart']['artist'].forEach(function (artist) {
 			if (!artists[artist['mbid']])
 				artists[artist['mbid']] = {
@@ -144,24 +145,30 @@ window.onload = function () {
 					url: artist['url'],
 					plays: [],
 					totalPlays: 0,
-					maxPlays: 0
+					maxPlays: -1,
+					maxWeek: null,
 				};
 			
 			artists[artist['mbid']].plays[weekNumber] = +artist['playcount'];
 			artists[artist['mbid']].totalPlays += +artist['playcount'];
-			artists[artist['mbid']].maxPlays = Math.max(artists[artist['mbid']].maxPlays, +artist['playcount']);
+			if (+artist['playcount'] > artists[artist['mbid']].maxPlays) {
+				artists[artist['mbid']].maxPlays = +artist['playcount'];
+				artists[artist['mbid']].maxWeek = weekNumber;
+			}
 		});
 	});
 	var data = Object.keys(artists).map(function (key) { return artists[key]; })
 		.filter(function (artist) { return artist.maxPlays > 30; })
-		//.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
+		.filter(function (artist) { return artist.totalPlays > 150; })
+		.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); });
 
 	var width = 600;
-	var height = 100;
+	var height = 200;
 	var line = d3.svg.line()
-		.x(function (plays, weekNumber) { return weekNumber * (width / data.length); })
-		.y(function (plays, weekNumber) { return height - 0.2 * (plays || 0); })
+		.x(function (plays, weekNumber) { return weekNumber * (width / data.length / 5); })
+		.y(function (plays, weekNumber) { return height - 0.4 * (plays || 0); })
 		//.interpolate('step-before');
+		.interpolate('basis');
 
 	var rows = d3
 		.select('#timeline')
@@ -178,7 +185,7 @@ window.onload = function () {
 		.append('path')
 		.attr('d', function (artist) { return line([0].concat(artist.plays, [0])); })
 		.attr('stroke', '#666')
-		.attr('fill', function () { return 'hsla(' + Math.floor(Math.random() * 360) + ', 73%, 90%, 0.8)'; });
+		.attr('fill', function () { return 'hsla(' + Math.floor(Math.random() * 360) + ', 100%, 80%, 0.7)'; });
 	
 	rows.append('td')
 		.text(function (artist) { return artist.name; })

@@ -9,12 +9,13 @@ table {
 
 td:first-child {
 	width: 600px;
-	height: 15px;
+	height: 10px;
 	position: relative;
 }
 td:last-child {
 	width: 200px;
-	padding: 0 0 0 1em;
+	padding: 0 0 0 0.5em;
+	font-size: 9px;
 }
 td svg {
 	position: absolute;
