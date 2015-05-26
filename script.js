@@ -18,7 +18,8 @@ var api = (function () {
 
 	var count = 1;
 	return function api(obj) {
-		obj['api_key'] = '1b22e1d1e7f28cd9eb441f258127e5b0';
+		//obj['api_key'] = '1b22e1d1e7f28cd9eb441f258127e5b0';
+		obj['api_key'] = 'b7472d0a7326602639ae462914ad9d2d';
 		obj['format'] = 'json';
 		obj['callback'] = 'lastfmcallback' + count++;
 		
@@ -36,7 +37,7 @@ var api = (function () {
 			var script = document.createElement('script');
 			script.src = 'http://ws.audioscrobbler.com/2.0/?' + stringify(obj);
 			document.body.appendChild(script);
-		}).catch(function (error) {
+		})/*.catch(function (error) {
 			// Retry the request.
 			console.error(obj, error);
 			return new Promise(function (resolve) {
@@ -44,35 +45,40 @@ var api = (function () {
 					api(obj).then(resolve);
 				}, 5000);
 			});
-		});
+		});*/
 	};
 }());
 
-// Batch-call promises n at a time.
-Promise.batch = function (n, arr, progress) {
-	function handle(resolve, reject) {
-		var index = started++;
-		if (index < arr.length)
-			arr[index]().then(function (value) {
-				++finished;
-				if (progress)
-					progress(finished, arr.length);
-					
-				values[index] = value;
-				handle(resolve, reject);
-			}, reject);
-		else
-			resolve();
-	}
-	
-	var started = 0;
-	var finished = 0;
-	var values = [];
-	var promises = [];
-	for (var i = 0; i < n; i++)
-		promises.push(new Promise(handle));
-	return Promise.all(promises).then(function () { return values; });
-};
+// Parallelize an array of functions that return promises.
+Promise.parallel = function (n, arr, progress) {
+	progress = progress || function () {};
+	return new Promise(function (resolve, reject) {	
+		function work() {
+			if (started < arr.length) {
+				var index = started++;
+				arr[index]()
+					.catch(function (error) {
+						// Just eat errors
+						return error;
+					})
+					.then(function (value) {
+						values[index] = value;
+						return progress(++finished, arr.length, started);
+					})
+					.then(work);
+			}
+			
+			if (finished >= arr.length)
+				resolve(values);
+		}
+		
+		var started = 0;
+		var finished = 0;
+		var values = [];
+		for (var i = 0; i < n; i++)
+			work();
+	});
+}
 
 /*
 var i = 0;
@@ -86,31 +92,43 @@ function t() {
 }
 stack = [t(), t(), t(), t(), t(), t(), t(), t(), t(), t(), t(), t(), t()];
 Promise.process(stack, 3).then(function (x) { console.log(x) })
-*//*
+*/
+function delay(ms, value) {
+	return new Promise(function (resolve) {
+		setTimeout(function () { resolve(value); }, ms);
+	});
+}
 
-api({
-	'method': 'user.getweeklychartlist', 
-	'user': 'obscuresecurity'
-}).then(function (response) {
+function go() {
+	api({
+		'method': 'user.getweeklychartlist', 
+		'user': 'obscuresecurity'
+	}).then(function (response) {
 		var user = response['weeklychartlist']['@attr']['user'];
 		var charts = response['weeklychartlist']['chart'];
-		return Promise.batch(5, charts.map(function (chart) {
-			return function () {
-				return api({
-					'method': 'user.getweeklyartistchart',
-					'user': 'obscuresecurity',
-					'from': chart['from'],
-					'to': chart['to']
-				});
-			};
-		}), function (n, m) {
-			console.log(n + ' out of ' + m);
-		});
+		return Promise.parallel(
+			5,
+			charts.slice(450, 500).map(function (chart) {
+				return function () {
+					return api({
+						'method': 'user.getweeklyartistchart',
+						'user': 'obscuresecurity',
+						'from': chart['from'],
+						'to': chart['to']
+					});
+				};
+			}),
+			function (n, m, q) {
+				console.log(n + ' out of ' + m, (q - n) + ' running');
+				return delay(Math.random() * 1000);
+			}
+		);
 	}).then(function (data) {
-		localStorage.lastfmdata = data;
+		localStorage.lastfmdata = JSON.stringify(data);
 		console.log(data);
-	})
-*/
+	});
+}
+
 var data = [
 	{
 		artist: 'Stars',
