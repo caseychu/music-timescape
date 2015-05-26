@@ -129,43 +129,39 @@ function go() {
 	});
 }
 
-var data = [
-	{
-		artist: 'Stars',
-		series: generateTimeSeries()
-	},
-	{
-		artist: 'Blue October',
-		series: generateTimeSeries()
-	},
-	{
-		artist: 'The Hush Sound',
-		series: generateTimeSeries()
-	},
-	{
-		artist: 'Stars',
-		series: generateTimeSeries()
-	},
-	{
-		artist: 'Blue October',
-		series: generateTimeSeries()
-	},
-	{
-		artist: 'The Hush Sound',
-		series: generateTimeSeries()
-	},
-];
-for (var i = 0; i < 3; i ++)
-	data = data.concat(data);
-
+function keyForWeek(week) {
+	return week['weeklyartistchart']['@attr']['from'] + '-' + week['weeklyartistchart']['@attr']['to'];
+}
 
 window.onload = function () {
+	var data = JSON.parse(localStorage.lastfmdata);
+	var artists = {};
+	data.forEach(function (week, weekNumber) {
+		week['weeklyartistchart']['artist'].forEach(function (artist) {
+			if (!artists[artist['mbid']])
+				artists[artist['mbid']] = {
+					name: artist['name'],
+					url: artist['url'],
+					plays: [],
+					totalPlays: 0,
+					maxPlays: 0
+				};
+			
+			artists[artist['mbid']].plays[weekNumber] = +artist['playcount'];
+			artists[artist['mbid']].totalPlays += +artist['playcount'];
+			artists[artist['mbid']].maxPlays = Math.max(artists[artist['mbid']].maxPlays, +artist['playcount']);
+		});
+	});
+	var data = Object.keys(artists).map(function (key) { return artists[key]; })
+		.filter(function (artist) { return artist.maxPlays > 30; })
+		//.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
+
 	var width = 600;
-	var height = 200;
+	var height = 100;
 	var line = d3.svg.line()
-		.x(function (d, i) { return i * 2; })
-		.y(function (d, i) { return height - 50 * d; })
-	//	.interpolate('step-before');
+		.x(function (plays, weekNumber) { return weekNumber * (width / data.length); })
+		.y(function (plays, weekNumber) { return height - 0.2 * (plays || 0); })
+		//.interpolate('step-before');
 
 	var rows = d3
 		.select('#timeline')
@@ -180,10 +176,10 @@ window.onload = function () {
 		.attr('width', width)
 		.attr('height', height)
 		.append('path')
-		.attr('d', function (artist) { return line([0].concat(artist.series, [0])); })
+		.attr('d', function (artist) { return line([0].concat(artist.plays, [0])); })
 		.attr('stroke', '#666')
-		.attr('fill', function () { return 'hsl(' + Math.floor(Math.random() * 360) + ', 73%, 90%)'; });
+		.attr('fill', function () { return 'hsla(' + Math.floor(Math.random() * 360) + ', 73%, 90%, 0.8)'; });
 	
 	rows.append('td')
-		.text(function (artist) { return artist.artist; })
+		.text(function (artist) { return artist.name; })
 };
