@@ -11,7 +11,7 @@ function generateTimeSeries() {
 
 function stringify(obj) {
 	return Object.keys(obj).map(function (key) {
-		return escape(key) + '=' + escape(obj[key])
+		return encodeURIComponent(key) + '=' + encodeURIComponent(obj[key])
 	}).join('&');
 }
 
@@ -93,11 +93,11 @@ Promise.parallel = function (n, arr, progress) {
 		for (var i = 0; i < n; i++)
 			work();
 	});
-}
+};
 
 function delay(ms, value) {
 	return new Promise(function (resolve) {
-		setTimeout(function () { resolve(value); }, ms);
+		setTimeout(resolve, ms, value);
 	});
 }
 
@@ -207,13 +207,21 @@ function processData(data) {
 }
 
 function draw(data) {
+
 	var width = 800;
 	var height = 13;
 	var paddingTop = 100;
 	var chartHeight = height * data.artists.length;
 	var totalHeight = paddingTop + chartHeight;
-	var scale = 0.5;
 	var paddingAxis = 20;
+	
+	// I want 10% of the peaks to be over 120 pixels.
+	var maxPlays = d3.quantile(
+		data
+			.artists.map(function (a) { return a.maxPlays; })
+			.sort(d3.ascending),
+		0.9);
+	var scale = 120 / maxPlays;
 	
 	var timeline = d3
 		.select('#timeline')
@@ -235,49 +243,12 @@ function draw(data) {
 				.ticks(d3.time.year.utc, 1)
 				.tickSize(-(chartHeight + paddingAxis), 0)
 				.tickFormat(function (yearDate) {
-					// Only show the year if there's enough room (say, 26 pixels)
-					if (width - yearScale(yearDate) > 26)
+					// Only show the year if there's enough room
+					if (width - yearScale(yearDate) > 30)
 						return yearDate.getUTCFullYear();
 					return '';
 				})
 		);
-
-	var cursor = timeline.append('g').attr('class', 'cursor');
-	cursor
-		.append('path')
-		.attr('d', 'M' + [0, -20 + paddingTop] + 'v' + (20 + chartHeight));
-	timeline.on('click', function () {
-		var x = d3.mouse(this)[0];
-		if (x > width)
-			return;
-		
-		var date = yearScale.invert(x);
-		var weekLength = 7 * 24 * 60 * 60 * 1000;
-		var week;
-		for (var i = 0; i < data.weeks.length; i++) {
-			if (data.weeks[i].to >= +date + weekLength) {
-				week = data.weeks[i];
-				break;
-			}
-		}
-		
-		if (!week) {
-			debugger;
-			throw new Error('why?')
-		}
-		cursor.attr('transform', 'translate(' + yearScale((week.from + week.to) / 2) + ', 0)');
-		
-		console.log(+date);
-		lastfm({
-			'method': 'user.getweeklytrackchart', 
-			'user': data.user,
-			'from': week.from / 1000,
-			'to': week.to / 1000
-		}).then(function (tracks) {
-			if (tracks['weeklytrackchart']['track'])
-				preview(tracks['weeklytrackchart']['track']);
-		})
-	});
 
 	timeline
 		.selectAll('g.artist')
@@ -300,10 +271,13 @@ function draw(data) {
 					var points = data.weeks.map(function (week) {
 						return [(week.from + week.to) / 2, artist.plays[week.from] || 0];
 					});
+					
 					points.unshift([data.startDate, 0]);
 					points.push([data.endDate, 0]);
+					while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
+						points.shift();
 					return line(points);
-				})
+				});
 				/*
 				.attr('transform', 'scale(1, 0.001)')
 				.transition()
@@ -316,12 +290,182 @@ function draw(data) {
 			// The artist text.
 			artist
 				.append('text')
-				.attr('x', width)
-				.attr('y', 3)
+				.attr('x', width + 4)
+				.attr('dy', '0.4em')
 				.text(function (artist) { return artist.name; });
 		});
-	
+		
+	timeline.on('click', function () {
+		var x = d3.mouse(this)[0];
+		if (x > width)
+			return;
+			
+		// Find the closest week to the one clicked.
+		var date = yearScale.invert(x);
+		var weekLength = 7 * 24 * 60 * 60 * 1000;
+		for (var i = 0; i < data.weeks.length; i++)
+			if (data.weeks[i].to >= +date + weekLength)
+				break;
+		
+		if (i === data.weeks.length) {
+			debugger;
+			throw new Error('why?')
+		}
+		
+		cursor
+			.classed('loading', true)
+			.style('left', yearScale((data.weeks[i].from + data.weeks[i].to) / 2) + 'px');
+		
+		if (playController) {
+			playController.pause();
+			Player.stop();
+		}
+		playController = new Interrupt();
+		play(i, playController);
+		/*setTimeout(function () {
+			playController.pause()
+		}, 1000);*/
+	});
+		
+	var playController = false;
+	var cursor = d3
+		.select('#cursor')
+		.style('height', (chartHeight + paddingAxis) + 'px')
+		.style('top', (paddingTop - paddingAxis) + 'px');
+	function stop() {
+		cursor
+			.classed('playing', false)
+			.classed('loading', false);
+	}
+	function play(weekNumber, interrupt) {
+		var week = data.weeks[weekNumber];
+		if (!week)
+			return;
+		interrupt = interrupt || Promise.resolve();
+		
+		return lastfm({
+			'method': 'user.getweeklytrackchart', 
+			'user': data.user,
+			'from': week.from / 1000,
+			'to': week.to / 1000
+		})
+		.then(interrupt)
+		.then(function (chart) {
+			if (!chart['weeklytrackchart']['track'])
+				return;
+					
+			var tracks = chart['weeklytrackchart']['track'].slice(0, 3).reverse();
+			var promise = Promise.resolve();
+			tracks.forEach(function (track) {
+				var name = track['name'];
+				var artist = track['artist']['#text'];
+				console.log(track);
+				promise = promise
+					.then(function () {
+						return spotify('search', {
+							'type': 'track',
+							'q': 'track:' + name + ' artist:' + artist,
+							'limit': 1
+						});
+					})
+					.then(interrupt)
+					.then(function (result) {
+						console.log(result);
+						var results = result['tracks']['items'];
+						if (results.length && interrupt.running)
+							Player.push(results[0]['preview_url']);
+					})
+					.then(interrupt);
+			});
+			return promise;
+		})
+		.then(function () {
+			//return play(weekNumber + 1, interrupt);
+		});
+	}	
 }
+
+function Interrupt() {
+	var blocked = [];
+	var interrupt = function (value) {
+		if (interrupt.running)
+			return value;
+		else
+			return new Promise(function (resolve) {
+				blocked.push(resolve);
+			});
+	};
+	interrupt.running = true;
+	interrupt.pause = function () {
+		interrupt.running = false;
+	};
+	interrupt.resume = function () {
+		interrupt.running = true;
+		while (blocked.length)
+			blocked.pop()();
+	};
+	return interrupt;
+}
+
+var Player = (function () {
+	var stopDuration = 500;
+	var startDuration = 750;
+	
+	// Fade a song in/out.
+	function fade(audio, from, to, duration) {
+		var scale = d3.scale.linear().domain([0, duration]).range([from, to]).clamp(true);
+		d3.timer(function (t) {
+			audio.volume = scale(t);
+			return t > duration;
+		});
+	}
+	
+	var current = false;
+	var queue = [];
+	function play() {
+		if (current) {
+			fade(current, 0, 1, startDuration);
+			current.play();
+		}
+	}
+	function next() {
+		if (current)
+			fade(current, 1, 0, stopDuration);
+		current = queue.shift();
+	}
+	function stop() {
+		queue = [];
+		next();
+	}
+	function push(src) {
+		console.log('loading', src);
+		var audio = new Audio();
+		audio.ontimeupdate = function () {
+			// To do: what if the audio pauses automatically to buffer?
+			console.log(audio.currentTime, audio.duration);
+			if (audio.ended || audio.currentTime + 2*stopDuration/1000 > audio.duration || (audio.currentTime > 5 && queue.length)) {
+				audio.ontimeupdate = null;
+				next();
+				play();
+			}
+		};
+		audio.preload = 'auto';
+		audio.src = src;
+		queue.push(audio);
+		
+		if (!current) {
+			next();
+			play();
+		}
+	}
+
+	return {
+		next: next,
+		stop: stop,
+		push: push
+	};
+}());
+
 
 function save(fileName, zoom) {
 	var zoom = zoom || 2;
@@ -346,65 +490,8 @@ function save(fileName, zoom) {
 		document.body.appendChild(a);
 		window.URL.revokeObjectURL(img.src);
 	};
-	img.src = window.URL.createObjectURL(new Blob([timeline.outerHTML], {type: 'image/svg+xml'}));
+	img.src = window.URL.createObjectURL(new Blob([timeline.outerHTML], {'type': 'image/svg+xml'}));
 }
-
-function preview(tracks) {
-	var track = tracks[0];
-	var name = track['name'];
-	var artist = track['artist']['#text'];
-	console.log(track);
-	spotify('search', {
-		'type': 'track',
-		'q': 'track:' + name + ' artist:' + artist,
-		'limit': 1
-	}).then(function (response) {
-		console.log(response);
-		var results = response['tracks']['items'];
-		if (results.length) {
-			var result = results[0];
-			Player.stop();
-			Player.play(result['preview_url']);
-		}
-	});
-}
-
-var Player = (function () {
-	var audios = [];
-	
-	// Fade a song in/out.
-	function fade(audio, from, to, duration) {
-		audio.volume = from;
-		var dt = 100;
-		var dVdt = (to - from) / duration;
-		var n = duration / dt;
-		return new Promise(function (resolve) {
-			(function step() {
-				audio.volume = Math.min(1, Math.max(0, audio.volume + dt * dVdt));
-				setTimeout(--n > 0 ? step : resolve, dt);
-			}());
-		});
-	}
-
-	return {
-		queue: function () {
-			
-		},
-		stop: function () {
-			audios.forEach(function (audio) {
-				fade(audio, 1, 0, 500);
-			});
-			audios = [];
-		},
-		play: function (url) {
-			var audio = new Audio();
-			audio.src = url;
-			fade(audio, 0, 1, 750);
-			audio.play();
-			audios.push(audio);
-		}
-	};
-}());
 
 window.onload = function () {
 	var data = processData(JSON.parse(localStorage.lastfmdata));

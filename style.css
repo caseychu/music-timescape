@@ -2,3 +2,21 @@ html {
 	font-family: "segoe ui", helvetica, sans-serif;
 	text-align: center;
 }
+
+#container {
+	display: inline-block;
+	position: relative;
+	overflow: hidden;
+}
+#cursor {
+	position: absolute;
+	display: none;
+}
+#cursor.playing {
+	border-right: 1px solid red;
+	display: block;
+}
+#cursor.loading {
+	border-right: 1px solid red;
+	display: block;
+}
