@@ -9,15 +9,16 @@ function generateTimeSeries() {
 	return series;
 }
 
-var api = (function () {
-	function stringify(obj) {
-		return Object.keys(obj).map(function (key) {
-			return escape(key) + '=' + escape(obj[key])
-		}).join('&');
-	}
+function stringify(obj) {
+	return Object.keys(obj).map(function (key) {
+		return escape(key) + '=' + escape(obj[key])
+	}).join('&');
+}
+
+var lastfm = (function () {
 
 	var count = 1;
-	return function api(obj) {
+	return function lastfm(obj) {
 		//obj['api_key'] = '1b22e1d1e7f28cd9eb441f258127e5b0';
 		obj['api_key'] = 'b7472d0a7326602639ae462914ad9d2d';
 		obj['format'] = 'json';
@@ -42,12 +43,25 @@ var api = (function () {
 			console.error(obj, error);
 			return new Promise(function (resolve) {
 				setTimeout(function () {
-					api(obj).then(resolve);
+					lastfm(obj).then(resolve);
 				}, 5000);
 			});
 		});*/
 	};
 }());
+
+// Spotify API... currently unauthenticated GET endpoints only.
+var spotify = function (endpoint, params) {
+	return new Promise(function (resolve, reject) {
+		var xhr = new XMLHttpRequest();
+		xhr.open('GET', 'https://api.spotify.com/v1/' + endpoint + '?' + stringify(params), true);
+		xhr.onload = function () {
+			resolve(JSON.parse(this.responseText));
+		};
+		xhr.onerror = reject;
+		xhr.send();
+	});
+};
 
 // Parallelize an array of functions that return promises.
 Promise.parallel = function (n, arr, progress) {
@@ -101,7 +115,7 @@ function delay(ms, value) {
 }
 
 function go(username) {
-	api({
+	lastfm({
 		'method': 'user.getweeklychartlist', 
 		'user': username
 	}).then(function (response) {
@@ -111,7 +125,7 @@ function go(username) {
 			5,
 			charts.map(function (chart) {
 				return function () {
-					return api({
+					return lastfm({
 						'method': 'user.getweeklyartistchart',
 						'user': username,
 						'from': chart['from'],
@@ -183,6 +197,7 @@ function processData(data) {
 	});
 	
 	return {
+		user: data[0]['weeklyartistchart']['@attr']['user'],
 		artists: Object.keys(artists).map(function (key) { return artists[key]; }),
 		startDate: new Date(startDate * 1000),
 		endDate: new Date(endDate * 1000),
@@ -229,15 +244,29 @@ function draw(data) {
 	var cursor = timeline.append('g').attr('class', 'cursor');
 	cursor
 		.append('path')
-		.attr('d', 'M' + [0, -25 + paddingTop] + 'v' + (20 + chartHeight));
+		.attr('d', 'M' + [0, -20 + paddingTop] + 'v' + (20 + chartHeight));
 	timeline.on('click', function () {
 		var x = d3.mouse(this)[0];
 		if (x > width)
 			return;
-			
+		
+		var weekLength = 7 * 24 * 60 * 60 * 1000;
 		var date = yearScale.invert(x);
-		cursor.attr('transform', 'translate(' + x + ', 0)');
-		console.log(date)
+		console.log(+date);
+		var from = +data.startDate + Math.floor((date - data.startDate) / weekLength) * weekLength;
+		cursor.attr('transform', 'translate(' + yearScale(from) + ', 0)');
+		
+		lastfm({
+			'method': 'user.getweeklytrackchart', 
+			'user': data.user,
+			'from': from / 1000,
+			'to': (from + weekLength) / 1000
+		}).then(function (tracks) {
+			if (tracks['weeklytrackchart']['track']) {
+				Player.stop();
+				preview(tracks['weeklytrackchart']['track']);
+			}
+		})
 	});
 
 	timeline
@@ -302,6 +331,44 @@ function save(fileName, zoom) {
 	};
 	img.src = window.URL.createObjectURL(new Blob([timeline.outerHTML], {type: 'image/svg+xml'}));
 }
+
+function preview(tracks) {
+	var track = tracks[0];
+	var name = track['name'];
+	var artist = track['artist']['#text'];
+	console.log(track);
+	spotify('search', {
+		'type': 'track',
+		'q': 'track:' + name + ' artist:' + artist,
+		'limit': 1
+	}).then(function (response) {
+		console.log(response);
+		var results = response['tracks']['items'];
+		if (results.length) {
+			var result = results[0];
+			Player.play(result['preview_url']);
+		}
+	});
+}
+
+var Player = (function () {
+	var audios = [];
+
+	return {
+		stop: function () {
+			audios.forEach(function (audio) {
+				audio.pause();
+			});
+			audios = [];
+		},
+		play: function (url) {
+			var audio = new Audio();
+			audio.src = url;
+			audio.play();
+			audios.push(audio);
+		}
+	};
+}());
 
 window.onload = function () {
 	var data = processData(JSON.parse(localStorage.lastfmdata));
