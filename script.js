@@ -205,8 +205,7 @@ function draw(data) {
 		.attr('height', totalHeight);
 	
 	// Year labels.
-	for (var year = data.startDate.getFullYear(); year <= data.endDate.getFullYear(); year++) {
-		var yearDate = Date.UTC(year, 0);
+	d3.time.year.utc.range(data.startDate, data.endDate).forEach(function (yearDate) {
 		var percentage = (yearDate - data.startDate) / (data.endDate - data.startDate);
 		
 		// Draw a vertical line at the beginning of each year.
@@ -222,8 +221,8 @@ function draw(data) {
 				.attr('x', width * percentage + 5)
 				.attr('y', paddingTop - 7)
 				.attr('fill', '#666')
-				.text(year);
-	}
+				.text(yearDate.getUTCFullYear());
+	});
 	
 	// Artist plots.
 	var line = d3.svg.line()
