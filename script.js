@@ -226,7 +226,20 @@ function draw(data) {
 				})
 		);
 
-	// Artist plots.
+	var cursor = timeline.append('g').attr('class', 'cursor');
+	cursor
+		.append('path')
+		.attr('d', 'M' + [0, -25 + paddingTop] + 'v' + (20 + chartHeight));
+	timeline.on('click', function () {
+		var x = d3.mouse(this)[0];
+		if (x > width)
+			return;
+			
+		var date = yearScale.invert(x);
+		cursor.attr('transform', 'translate(' + x + ', 0)');
+		console.log(date)
+	});
+
 	timeline
 		.selectAll('g.artist')
 		.data(data.artists)
@@ -237,6 +250,7 @@ function draw(data) {
 			return 'translate(0, ' + (height * artistNumber + paddingTop) + ')';
 		})
 		.call(function (artist) {
+			// Artist plots.
 			var line = d3.svg.line()
 				.x(function (plays, weekNumber) { return weekNumber * (width / (data.weekCount + 2)); })
 				.y(function (plays, weekNumber) { return -scale * plays || 0; })

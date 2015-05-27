@@ -2,14 +2,3 @@ html {
 	font-family: "segoe ui", helvetica, sans-serif;
 	text-align: center;
 }
-
-svg {
-	-moz-user-select: none;
-	-webkit-user-select: none;
-	user-select: none;
-	cursor: default;
-}
-
-svg g:hover {
-	cursor: pointer;
-}

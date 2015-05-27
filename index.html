@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 	<head>
-		<title>Last.fm 3D</title>
+		<title>Music Timescape</title>
 		<link href="style.css" rel="stylesheet" type="text/css" />
 	</head>
 	<body>
@@ -11,6 +11,11 @@
 				svg {
 					font-family: 'segoe ui', helvetica, sans-serif;
 					font-size: 12px;
+					
+					-moz-user-select: none;
+					-webkit-user-select: none;
+					user-select: none;
+					cursor: pointer;
 				}
 				.axis .domain {
 					display: none;
@@ -20,8 +25,11 @@
 				}
 				.axis text {
 					text-anchor: start !important;
-					fill: #999;
+					fill: #aaa;
 					transform: translate(5px, 16px);
+				}
+				.cursor {
+					stroke: red;
 				}
 				
 				.artist path {
@@ -29,6 +37,8 @@
 				}
 				.artist text {
 					fill: #666;
+				}
+				.artist path:hover {
 				}
 			</style>
 		</svg>
