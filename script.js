@@ -131,56 +131,62 @@ function go(username) {
 }
 
 function processData(data) {
-	function isEmptyWeek(week) {
-		return !week || week['error'] || !week['weeklyartistchart']['artist'];
-	}
-
-	// Chop off empty weeks from the beginning.
-	while (data.length && isEmptyWeek(data[0]))
-		data.shift();
+	// Filter empty weeks and (just in case) make sure it's in order...
+	data = data
+		.filter(function (week) {
+			return week && !week['error'] && week['weeklyartistchart']['artist'];
+		})
+		.sort(function (w1, w2) {
+			return w1['weeklyartistchart']['@attr']['from'] - w2['weeklyartistchart']['@attr']['from'];
+		});
+	
+	if (data.length == 0)
+		throw new Error('No data!');
+	
+	var startDate = data[0]['weeklyartistchart']['@attr']['from'];
+	var endDate = data[data.length - 1]['weeklyartistchart']['@attr']['to'];
+	var weekLength = 60 * 60 * 24 * 7;
+	var weekCount = (endDate - startDate) / weekLength;
 
 	// Go through each week and count the plays for each artist.
 	var artists = {};
 	data.forEach(function (week, weekNumber) {
-		if (!isEmptyWeek(week)) {
-			// If there's only one artist this week, Last.fm doesn't wrap it in an array...
-			if (!(week['weeklyartistchart']['artist'] instanceof Array))
-				week['weeklyartistchart']['artist'] = [week['weeklyartistchart']['artist']];
-		
-			week['weeklyartistchart']['artist'].forEach(function (artist) {
-				// Create a new entry for this artist if it doesn't exist.
-				if (!artists[artist['name'] + artist['mbid']]) {
-					artists[artist['name'] + artist['mbid']] = {
-						name: artist['name'],
-						url: artist['url'],
-						plays: new Array(data.length),
-						totalPlays: 0,
-						maxPlays: -1,
-						maxWeek: null,
-					};
-				}
-				
-				// Update info.
-				var artistInfo = artists[artist['name'] + artist['mbid']];
-				var playCount = +artist['playcount'];
-				artistInfo.plays[weekNumber] = playCount;
-				artistInfo.totalPlays += playCount;
-				if (playCount > artistInfo.maxPlays) {
-					artistInfo.maxPlays = playCount;
-					artistInfo.maxWeek = weekNumber;
-				}
-			});
-		}
+		var weekNumber = (week['weeklyartistchart']['@attr']['from'] - startDate) / weekLength;
+	
+		// If there's only one artist this week, Last.fm doesn't wrap it in an array...
+		if (!(week['weeklyartistchart']['artist'] instanceof Array))
+			week['weeklyartistchart']['artist'] = [week['weeklyartistchart']['artist']];
+	
+		week['weeklyartistchart']['artist'].forEach(function (artist) {
+			// Create a new entry for this artist if it doesn't exist.
+			if (!artists[artist['name'] + artist['mbid']]) {
+				artists[artist['name'] + artist['mbid']] = {
+					name: artist['name'],
+					url: artist['url'],
+					plays: new Array(weekCount),
+					totalPlays: 0,
+					maxPlays: -1,
+					maxWeek: null,
+				};
+			}
+			
+			// Update info.
+			var artistInfo = artists[artist['name'] + artist['mbid']];
+			var playCount = +artist['playcount'];
+			artistInfo.plays[weekNumber] = playCount;
+			artistInfo.totalPlays += playCount;
+			if (playCount > artistInfo.maxPlays) {
+				artistInfo.maxPlays = playCount;
+				artistInfo.maxWeek = weekNumber;
+			}
+		});
 	});
 	
 	return {
 		artists: Object.keys(artists).map(function (key) { return artists[key]; }),
-		weeks: data.map(function (week) {
-			return !isEmptyWeek(week) && [
-				new Date(week['weeklyartistchart']['@attr']['from'] * 1000),
-				new Date(week['weeklyartistchart']['@attr']['to'] * 1000)
-			];
-		})
+		startDate: new Date(startDate * 1000),
+		endDate: new Date(endDate * 1000),
+		weekCount: weekCount
 	};
 }
 
@@ -189,7 +195,8 @@ function draw(data) {
 	var width = 800;
 	var height = 13;
 	var paddingTop = 100;
-	var totalHeight = paddingTop + height * data.artists.length;
+	var chartHeight = height * data.artists.length;
+	var totalHeight = paddingTop + chartHeight;
 	var scale = 0.5;
 	
 	var timeline = d3
@@ -197,25 +204,31 @@ function draw(data) {
 		.attr('width', width + 150)
 		.attr('height', totalHeight);
 	
-	// Time labels.
-	timeline
-		.selectAll('text')
-		.data(data.weeks)
-		.enter()
-		//.filter(function (week, weekNumber) { return weekNumber % 15 == 0; })
-		.append('text')
-		.attr('x', function (week, weekNumber) { return -15 + weekNumber * (width / (data.weeks.length)); })
-		.attr('y', paddingTop - 15)
-		.attr('fill', '#666')
-		.text(function (week, weekNumber) {
-			return week && week[0].getMonth() === 0 && week[0].getDate() <= 7 ? week[0].getFullYear() : '';
-		});
+	// Year labels.
+	for (var year = data.startDate.getFullYear(); year <= data.endDate.getFullYear(); year++) {
+		var yearDate = Date.UTC(year, 0);
+		var percentage = (yearDate - data.startDate) / (data.endDate - data.startDate);
+		
+		// Draw a vertical line at the beginning of each year.
+		timeline
+			.append('path')
+			.attr('d', 'M' + [width * percentage, -20 + paddingTop] + 'v' + (20 + chartHeight))
+			.attr('stroke', '#ccc');
+			
+		// The actual label; only show it if there's enough room (let's say, a fifth of a year).
+		if (data.endDate - yearDate > 365 * 24 * 60 * 60 * 1000 / 5)
+			timeline
+				.append('text')
+				.attr('x', width * percentage + 5)
+				.attr('y', paddingTop - 7)
+				.attr('fill', '#666')
+				.text(year);
+	}
 	
 	// Artist plots.
 	var line = d3.svg.line()
-		.x(function (plays, weekNumber) { return weekNumber * (width / (data.weeks.length + 2)); })
+		.x(function (plays, weekNumber) { return weekNumber * (width / (data.weekCount + 2)); })
 		.y(function (plays, weekNumber) { return -scale * plays || 0; })
-		//.interpolate('step-before');
 		.interpolate('basis');
 	var artist = timeline
 		.selectAll('g')
@@ -228,7 +241,6 @@ function draw(data) {
 	artist.append('path')
 		.attr('fill', function (artist, i) { return 'hsla(' + (Math.floor(i * 31 % 360)) + ', 100%, 80%, 0.7)'; })
 		.attr('stroke', '#666')
-		//.attr('stroke', function (artist, i) { return 'hsla(' + (360-Math.floor(i * 37 % 360)) + ', 100%, 30%, 0.7)'; });
 		.attr('d', function (artist, artistNumber) { return line([0].concat(artist.plays, [0])); })
 		/*
 		.attr('transform', 'scale(1, 0.001)')
@@ -239,6 +251,7 @@ function draw(data) {
 		.attr('transform', 'scale(1, 1)');
 		*/
 	
+	// The artist text.
 	artist
 		.append('text')
 		.attr('x', width)

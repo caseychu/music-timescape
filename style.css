@@ -4,7 +4,6 @@ html {
 }
 
 svg {
-	font-size: 12px;
 	-webkit-user-select: none;
 	user-select: none;
 	cursor: default;
