@@ -102,12 +102,23 @@ function delay(ms, value) {
 }
 
 function go(username) {
-	lastfm({
-		'method': 'user.getweeklychartlist', 
-		'user': username
-	}).then(function (response) {
-		var user = response['weeklychartlist']['@attr']['user'];
-		var charts = response['weeklychartlist']['chart'];
+	Promise.all([
+		lastfm({
+			'method': 'user.getinfo',
+			'user': username
+		}),
+		lastfm({
+			'method': 'user.getweeklychartlist', 
+			'user': username
+		})
+	]).then(function (response) {
+		var charts = response[1]['weeklychartlist']['chart'];
+	
+		// Don't fetch the weeks from before the user signed up.
+		var registeredTime = +response[0]['user']['registered']['unixtime'];
+		while (charts.length && +charts[0]['to'] < registeredTime)
+			charts.shift();
+			
 		return Promise.parallel(
 			5,
 			charts.map(function (chart) {
@@ -143,16 +154,10 @@ function processData(data) {
 	
 	if (data.length == 0)
 		throw new Error('No data!');
-	
-	var startDate = data[0]['weeklyartistchart']['@attr']['from'];
-	var endDate = data[data.length - 1]['weeklyartistchart']['@attr']['to'];
-	var weekLength = 60 * 60 * 24 * 7;
-	var weekCount = (endDate - startDate) / weekLength;
 
 	// Go through each week and count the plays for each artist.
 	var artists = {};
 	data.forEach(function (week, weekNumber) {
-		var weekNumber = (week['weeklyartistchart']['@attr']['from'] - startDate) / weekLength;
 	
 		// If there's only one artist this week, Last.fm doesn't wrap it in an array...
 		if (!(week['weeklyartistchart']['artist'] instanceof Array))
@@ -164,7 +169,7 @@ function processData(data) {
 				artists[artist['name'] + artist['mbid']] = {
 					name: artist['name'],
 					url: artist['url'],
-					plays: new Array(weekCount),
+					plays: {},
 					totalPlays: 0,
 					maxPlays: -1,
 					maxWeek: null,
@@ -175,11 +180,12 @@ function processData(data) {
 			// Update info.
 			var artistInfo = artists[artist['name'] + artist['mbid']];
 			var playCount = +artist['playcount'];
-			artistInfo.plays[weekNumber] = playCount;
+			var weekDate = week['weeklyartistchart']['@attr']['from'] * 1000;
+			artistInfo.plays[weekDate] = playCount;
 			artistInfo.totalPlays += playCount;
 			if (playCount > artistInfo.maxPlays) {
 				artistInfo.maxPlays = playCount;
-				artistInfo.maxWeek = weekNumber;
+				artistInfo.maxWeek = weekDate;
 			}
 			if (rank < artistInfo.topRank)
 				artistInfo.topRank = rank;
@@ -189,9 +195,14 @@ function processData(data) {
 	return {
 		user: data[0]['weeklyartistchart']['@attr']['user'],
 		artists: Object.keys(artists).map(function (key) { return artists[key]; }),
-		startDate: new Date(startDate * 1000),
-		endDate: new Date(endDate * 1000),
-		weekCount: weekCount
+		weeks: data.map(function (week) {
+			return {
+				from: week['weeklyartistchart']['@attr']['from'] * 1000, 
+				to: week['weeklyartistchart']['@attr']['to'] * 1000
+			};
+		}),
+		startDate: new Date(data[0]['weeklyartistchart']['@attr']['from'] * 1000),
+		endDate: new Date(data[data.length - 1]['weeklyartistchart']['@attr']['to'] * 1000)
 	};
 }
 
@@ -224,8 +235,8 @@ function draw(data) {
 				.ticks(d3.time.year.utc, 1)
 				.tickSize(-(chartHeight + paddingAxis), 0)
 				.tickFormat(function (yearDate) {
-					// Only show the year if there's enough room (say, a fifth of the year)
-					if (data.endDate - yearDate > 365 * 24 * 60 * 60 * 1000 / 5)
+					// Only show the year if there's enough room (say, 26 pixels)
+					if (width - yearScale(yearDate) > 26)
 						return yearDate.getUTCFullYear();
 					return '';
 				})
@@ -240,17 +251,28 @@ function draw(data) {
 		if (x > width)
 			return;
 		
-		var weekLength = 7 * 24 * 60 * 60 * 1000;
 		var date = yearScale.invert(x);
-		console.log(+date);
-		var from = +data.startDate + Math.round((date - data.startDate) / weekLength) * weekLength;
-		cursor.attr('transform', 'translate(' + yearScale(from) + ', 0)');
+		var weekLength = 7 * 24 * 60 * 60 * 1000;
+		var week;
+		for (var i = 0; i < data.weeks.length; i++) {
+			if (data.weeks[i].to >= +date + weekLength) {
+				week = data.weeks[i];
+				break;
+			}
+		}
 		
+		if (!week) {
+			debugger;
+			throw new Error('why?')
+		}
+		cursor.attr('transform', 'translate(' + yearScale((week.from + week.to) / 2) + ', 0)');
+		
+		console.log(+date);
 		lastfm({
 			'method': 'user.getweeklytrackchart', 
 			'user': data.user,
-			'from': from / 1000,
-			'to': (from + weekLength) / 1000
+			'from': week.from / 1000,
+			'to': week.to / 1000
 		}).then(function (tracks) {
 			if (tracks['weeklytrackchart']['track'])
 				preview(tracks['weeklytrackchart']['track']);
@@ -269,12 +291,19 @@ function draw(data) {
 		.call(function (artist) {
 			// Artist plots.
 			var line = d3.svg.line()
-				.x(function (plays, weekNumber) { return weekNumber * (width / (data.weekCount + 2)); })
-				.y(function (plays, weekNumber) { return -scale * plays || 0; })
+				.x(function (plays) { return yearScale(plays[0]); })
+				.y(function (plays) { return -scale * plays[1]; })
 				.interpolate('basis');
 			artist.append('path')
 				.attr('fill', function (artist, i) { return 'hsla(' + (Math.floor(i * 31 % 360)) + ', 100%, 80%, 0.7)'; })
-				.attr('d', function (artist, artistNumber) { return line([0].concat(artist.plays, [0])); })
+				.attr('d', function (artist, artistNumber) {
+					var points = data.weeks.map(function (week) {
+						return [(week.from + week.to) / 2, artist.plays[week.from] || 0];
+					});
+					points.unshift([data.startDate, 0]);
+					points.push([data.endDate, 0]);
+					return line(points);
+				})
 				/*
 				.attr('transform', 'scale(1, 0.001)')
 				.transition()
