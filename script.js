@@ -95,19 +95,6 @@ Promise.parallel = function (n, arr, progress) {
 	});
 }
 
-/*
-var i = 0;
-function t() {
-	var idx = i++;
-	return function () {
-		return new Promise(function (resolve) {
-			setTimeout(function () { console.log('resolved ' + idx); resolve(idx) }, 1000 + Math.random() * 1000);
-		});
-	};
-}
-stack = [t(), t(), t(), t(), t(), t(), t(), t(), t(), t(), t(), t(), t()];
-Promise.process(stack, 3).then(function (x) { console.log(x) })
-*/
 function delay(ms, value) {
 	return new Promise(function (resolve) {
 		setTimeout(function () { resolve(value); }, ms);
@@ -171,7 +158,7 @@ function processData(data) {
 		if (!(week['weeklyartistchart']['artist'] instanceof Array))
 			week['weeklyartistchart']['artist'] = [week['weeklyartistchart']['artist']];
 	
-		week['weeklyartistchart']['artist'].forEach(function (artist) {
+		week['weeklyartistchart']['artist'].forEach(function (artist, rank) {
 			// Create a new entry for this artist if it doesn't exist.
 			if (!artists[artist['name'] + artist['mbid']]) {
 				artists[artist['name'] + artist['mbid']] = {
@@ -181,6 +168,7 @@ function processData(data) {
 					totalPlays: 0,
 					maxPlays: -1,
 					maxWeek: null,
+					topRank: Infinity
 				};
 			}
 			
@@ -193,6 +181,8 @@ function processData(data) {
 				artistInfo.maxPlays = playCount;
 				artistInfo.maxWeek = weekNumber;
 			}
+			if (rank < artistInfo.topRank)
+				artistInfo.topRank = rank;
 		});
 	});
 	
@@ -253,7 +243,7 @@ function draw(data) {
 		var weekLength = 7 * 24 * 60 * 60 * 1000;
 		var date = yearScale.invert(x);
 		console.log(+date);
-		var from = +data.startDate + Math.floor((date - data.startDate) / weekLength) * weekLength;
+		var from = +data.startDate + Math.round((date - data.startDate) / weekLength) * weekLength;
 		cursor.attr('transform', 'translate(' + yearScale(from) + ', 0)');
 		
 		lastfm({
@@ -262,10 +252,8 @@ function draw(data) {
 			'from': from / 1000,
 			'to': (from + weekLength) / 1000
 		}).then(function (tracks) {
-			if (tracks['weeklytrackchart']['track']) {
-				Player.stop();
+			if (tracks['weeklytrackchart']['track'])
 				preview(tracks['weeklytrackchart']['track']);
-			}
 		})
 	});
 
@@ -346,6 +334,7 @@ function preview(tracks) {
 		var results = response['tracks']['items'];
 		if (results.length) {
 			var result = results[0];
+			Player.stop();
 			Player.play(result['preview_url']);
 		}
 	});
@@ -353,17 +342,35 @@ function preview(tracks) {
 
 var Player = (function () {
 	var audios = [];
+	
+	// Fade a song in/out.
+	function fade(audio, from, to, duration) {
+		audio.volume = from;
+		var dt = 100;
+		var dVdt = (to - from) / duration;
+		var n = duration / dt;
+		return new Promise(function (resolve) {
+			(function step() {
+				audio.volume = Math.min(1, Math.max(0, audio.volume + dt * dVdt));
+				setTimeout(--n > 0 ? step : resolve, dt);
+			}());
+		});
+	}
 
 	return {
+		queue: function () {
+			
+		},
 		stop: function () {
 			audios.forEach(function (audio) {
-				audio.pause();
+				fade(audio, 1, 0, 500);
 			});
 			audios = [];
 		},
 		play: function (url) {
 			var audio = new Audio();
 			audio.src = url;
+			fade(audio, 0, 1, 750);
 			audio.play();
 			audios.push(audio);
 		}
@@ -373,7 +380,7 @@ var Player = (function () {
 window.onload = function () {
 	var data = processData(JSON.parse(localStorage.lastfmdata));
 	data.artists = data.artists
-		.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50); })
+		.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
 		.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); })
 		.slice(0, 50)
 		.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); })
