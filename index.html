@@ -5,8 +5,33 @@
 		<link href="style.css" rel="stylesheet" type="text/css" />
 	</head>
 	<body>
-		<!-- Inline styles so font information gets saved when user saves the image -->
-		<svg xmlns="http://www.w3.org/2000/svg" style="font-family: 'segoe ui', helvetica, sans-serif; font-size: 12px" id="timeline"></svg>
+		<!-- Inline styles so styles are used when user saves the image -->
+		<svg xmlns="http://www.w3.org/2000/svg" id="timeline">
+			<style scoped>
+				svg {
+					font-family: 'segoe ui', helvetica, sans-serif;
+					font-size: 12px;
+				}
+				.axis .domain {
+					display: none;
+				}
+				.axis line {
+					stroke: #ccc;
+				}
+				.axis text {
+					text-anchor: start !important;
+					fill: #999;
+					transform: translate(5px, 16px);
+				}
+				
+				.artist path {
+					stroke: #666;
+				}
+				.artist text {
+					fill: #666;
+				}
+			</style>
+		</svg>
 		<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
 		<script src="script.js"></script>
 	</body>

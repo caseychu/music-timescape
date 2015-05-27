@@ -191,13 +191,13 @@ function processData(data) {
 }
 
 function draw(data) {
-	
 	var width = 800;
 	var height = 13;
 	var paddingTop = 100;
 	var chartHeight = height * data.artists.length;
 	var totalHeight = paddingTop + chartHeight;
 	var scale = 0.5;
+	var paddingAxis = 20;
 	
 	var timeline = d3
 		.select('#timeline')
@@ -205,58 +205,62 @@ function draw(data) {
 		.attr('height', totalHeight);
 	
 	// Year labels.
-	d3.time.year.utc.range(data.startDate, data.endDate).forEach(function (yearDate) {
-		var percentage = (yearDate - data.startDate) / (data.endDate - data.startDate);
-		
-		// Draw a vertical line at the beginning of each year.
-		timeline
-			.append('path')
-			.attr('d', 'M' + [width * percentage, -20 + paddingTop] + 'v' + (20 + chartHeight))
-			.attr('stroke', '#ccc');
-			
-		// The actual label; only show it if there's enough room (let's say, a fifth of a year).
-		if (data.endDate - yearDate > 365 * 24 * 60 * 60 * 1000 / 5)
-			timeline
-				.append('text')
-				.attr('x', width * percentage + 5)
-				.attr('y', paddingTop - 7)
-				.attr('fill', '#666')
-				.text(yearDate.getUTCFullYear());
-	});
-	
+	var yearScale = d3.time.scale.utc()
+		.domain([data.startDate, data.endDate])
+		.range([0, width]);
+	timeline
+		.append('g')
+		.attr('class', 'axis')
+		.attr('transform', 'translate(0,' + (paddingTop - paddingAxis) + ')')
+		.call(
+			d3.svg.axis()
+				.scale(yearScale)
+				.orient('top')
+				.ticks(d3.time.year.utc, 1)
+				.tickSize(-(chartHeight + paddingAxis), 0)
+				.tickFormat(function (yearDate) {
+					// Only show the year if there's enough room (say, a fifth of the year)
+					if (data.endDate - yearDate > 365 * 24 * 60 * 60 * 1000 / 5)
+						return yearDate.getUTCFullYear();
+					return '';
+				})
+		);
+
 	// Artist plots.
-	var line = d3.svg.line()
-		.x(function (plays, weekNumber) { return weekNumber * (width / (data.weekCount + 2)); })
-		.y(function (plays, weekNumber) { return -scale * plays || 0; })
-		.interpolate('basis');
-	var artist = timeline
-		.selectAll('g')
+	timeline
+		.selectAll('g.artist')
 		.data(data.artists)
 		.enter()
 		.append('g')
+		.attr('class', 'artist')
 		.attr('transform', function (artist, artistNumber) {
 			return 'translate(0, ' + (height * artistNumber + paddingTop) + ')';
+		})
+		.call(function (artist) {
+			var line = d3.svg.line()
+				.x(function (plays, weekNumber) { return weekNumber * (width / (data.weekCount + 2)); })
+				.y(function (plays, weekNumber) { return -scale * plays || 0; })
+				.interpolate('basis');
+			artist.append('path')
+				.attr('fill', function (artist, i) { return 'hsla(' + (Math.floor(i * 31 % 360)) + ', 100%, 80%, 0.7)'; })
+				.attr('d', function (artist, artistNumber) { return line([0].concat(artist.plays, [0])); })
+				/*
+				.attr('transform', 'scale(1, 0.001)')
+				.transition()
+				.delay(1000)
+				.duration(20000)
+				.ease('elastic')
+				.attr('transform', 'scale(1, 1)');
+				*/
+			
+			// The artist text.
+			artist
+				.append('text')
+				.attr('x', width)
+				.attr('y', 3)
+				.text(function (artist) { return artist.name; });
 		});
-	artist.append('path')
-		.attr('fill', function (artist, i) { return 'hsla(' + (Math.floor(i * 31 % 360)) + ', 100%, 80%, 0.7)'; })
-		.attr('stroke', '#666')
-		.attr('d', function (artist, artistNumber) { return line([0].concat(artist.plays, [0])); })
-		/*
-		.attr('transform', 'scale(1, 0.001)')
-		.transition()
-		.delay(1000)
-		.duration(20000)
-		.ease('elastic')
-		.attr('transform', 'scale(1, 1)');
-		*/
 	
-	// The artist text.
-	artist
-		.append('text')
-		.attr('x', width)
-		.attr('y', 3)
-		.attr('fill', '#666')
-		.text(function (artist) { return artist.name; });
 }
 
 function save(fileName, zoom) {
@@ -275,9 +279,11 @@ function save(fileName, zoom) {
 		
 		// Save the image.
 		var a = document.createElement('a');
+		a.innerHTML = 'download';
 		a.download = fileName + '.png';
 		a.href = canvas.toDataURL('image/png');
 		a.click();
+		document.body.appendChild(a);
 		window.URL.revokeObjectURL(img.src);
 	};
 	img.src = window.URL.createObjectURL(new Blob([timeline.outerHTML], {type: 'image/svg+xml'}));
