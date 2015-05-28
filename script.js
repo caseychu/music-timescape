@@ -143,13 +143,31 @@ function go(username) {
 }
 
 function processData(data) {
-	// Filter empty weeks and (just in case) make sure it's in order...
-	data = data
-		.filter(function (week) {
-			return week && !week['error'] && week['weeklyartistchart']['artist'];
+	// Remove empty weeks.
+	data = data.filter(function (week) { return week && !week['error']; });
+	var user = data[0]['weeklyartistchart']['@attr']['user'];
+	
+	// Normalize the data, as Last.fm is really, really inconsistent...
+	var weeks = data.map(function (week) {
+			var rec = week['weeklyartistchart'];			
+			if (rec['artist'])
+				return {
+					from: 1000 * rec['@attr']['from'],
+					to: 1000 * rec['@attr']['to'],
+					artists: 
+						rec['artist'] instanceof Array
+							? week['weeklyartistchart']['artist']
+							: [week['weeklyartistchart']['artist']]
+				};
+			
+			return {
+				from: 1000 * rec['from'],
+				to: 1000 * rec['to'],
+				artists: []
+			};
 		})
 		.sort(function (w1, w2) {
-			return w1['weeklyartistchart']['@attr']['from'] - w2['weeklyartistchart']['@attr']['from'];
+			return w1.from - w2.from;
 		});
 	
 	if (data.length == 0)
@@ -157,13 +175,8 @@ function processData(data) {
 
 	// Go through each week and count the plays for each artist.
 	var artists = {};
-	data.forEach(function (week, weekNumber) {
-	
-		// If there's only one artist this week, Last.fm doesn't wrap it in an array...
-		if (!(week['weeklyartistchart']['artist'] instanceof Array))
-			week['weeklyartistchart']['artist'] = [week['weeklyartistchart']['artist']];
-	
-		week['weeklyartistchart']['artist'].forEach(function (artist, rank) {
+	weeks.forEach(function (week, weekNumber) {	
+		week.artists.forEach(function (artist, rank) {
 			var key = artist['name'] + artist['mbid'];
 			// Create a new entry for this artist if it doesn't exist.
 			if (!artists[key]) {
@@ -179,31 +192,24 @@ function processData(data) {
 			}
 			
 			// Update info.
-			var artistInfo = artists[key];
-			var playCount = +artist['playcount'];
-			var weekDate = week['weeklyartistchart']['@attr']['from'] * 1000;
-			artistInfo.plays[weekDate] = playCount;
-			artistInfo.totalPlays += playCount;
-			if (playCount > artistInfo.maxPlays) {
-				artistInfo.maxPlays = playCount;
-				artistInfo.maxWeek = weekDate;
+			var plays = +artist['playcount'];
+			artists[key].plays[week.from] = plays;
+			artists[key].totalPlays += plays;
+			if (plays > artists[key].maxPlays) {
+				artists[key].maxPlays = plays;
+				artists[key].maxWeek = week.from;
 			}
-			if (rank < artistInfo.topRank)
-				artistInfo.topRank = rank;
+			if (rank < artists[key].topRank)
+				artists[key].topRank = rank;
 		});
 	});
 	
 	return {
-		user: data[0]['weeklyartistchart']['@attr']['user'],
+		user: user,
 		artists: Object.keys(artists).map(function (key) { return artists[key]; }),
-		weeks: data.map(function (week) {
-			return {
-				from: week['weeklyartistchart']['@attr']['from'] * 1000, 
-				to: week['weeklyartistchart']['@attr']['to'] * 1000
-			};
-		}),
-		startDate: new Date(data[0]['weeklyartistchart']['@attr']['from'] * 1000),
-		endDate: new Date(data[data.length - 1]['weeklyartistchart']['@attr']['to'] * 1000)
+		weeks: weeks,
+		startDate: new Date(weeks[0].from),
+		endDate: new Date(weeks[data.length - 1].to)
 	};
 }
 
@@ -320,6 +326,9 @@ function draw(data) {
 		
 		playController = new Interrupt();
 		play(i, playController);
+		setTimeout(function () {
+			playController.pause();
+		}, 10000);
 	});
 		
 	var playController = false;
@@ -387,7 +396,7 @@ function draw(data) {
 		})
 		.catch(function () {})
 		.then(function () {
-			//return play(weekNumber + 1, interrupt);
+			return play(weekNumber + 1, interrupt);
 		});
 	}
 }
@@ -453,7 +462,6 @@ var Player = (function () {
 		self.next();
 	}
 	self.push = function (src, info) {
-		console.log('loading', info);
 		var audio = new Audio();
 		audio.ontimeupdate = function () {
 			// To do: what if the audio pauses automatically to buffer?
