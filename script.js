@@ -234,8 +234,8 @@ function draw(data) {
 	if (data.weeks.length === 0)
 		throw new Error('No data!');
 	var user = data.weeks[0].user;
-	var startDate = new Date(data.weeks[0].from);
-	var endDate = new Date(data.weeks[data.weeks.length - 1].to);
+	var startDate = data.weeks[0].from;
+	var endDate = data.weeks[data.weeks.length - 1].to;
 
 	var width = 800;
 	var height = 13;
@@ -252,7 +252,7 @@ function draw(data) {
 	
 	var timeline = d3
 		.select('#timeline')
-		.attr('width', width + 150)
+		.attr('width', width + 130)
 		.attr('height', totalHeight);
 	
 	// Year labels.
@@ -271,9 +271,9 @@ function draw(data) {
 				.tickSize(-(chartHeight + paddingAxis), 0)
 				.tickFormat(function (yearDate) {
 					// Only show the year if there's enough room
-					if (width - yearScale(yearDate) > 30)
-						return yearDate.getUTCFullYear();
-					return '';
+					if (width - yearScale(yearDate) < 30)
+						return '';
+					return yearDate.getUTCFullYear();
 				})
 		);
 
@@ -304,25 +304,23 @@ function draw(data) {
 					while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
 						points.shift();
 					return line(points);
-				});
+				})
 				/*
 				.attr('transform', 'scale(1, 0.001)')
 				.transition()
 				.delay(1000)
-				.duration(20000)
-				.ease('elastic')
+				.duration(1500)
 				.attr('transform', 'scale(1, 1)');
 				*/
 			
 			// The artist text.
 			artist
 				.append('text')
-				.attr('x', width + 4)
-				.attr('dy', '0.1em')
+				.attr('x', width)
 				.text(function (artist) { return artist.name; });
 		});
 		
-	timeline.on('click', function () {
+	d3.select('#graph').on('click', function () {
 		var x = d3.mouse(this)[0];
 		if (x > width)
 			return;
