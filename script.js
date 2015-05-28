@@ -101,15 +101,15 @@ function delay(ms, value) {
 	});
 }
 
-function go(username) {
+function go(user) {
 	Promise.all([
 		lastfm({
 			'method': 'user.getinfo',
-			'user': username
+			'user': user
 		}),
 		lastfm({
 			'method': 'user.getweeklychartlist', 
-			'user': username
+			'user': user
 		})
 	]).then(function (response) {
 		var charts = response[1]['weeklychartlist']['chart'];
@@ -125,7 +125,7 @@ function go(username) {
 				return function () {
 					return lastfm({
 						'method': 'user.getweeklyartistchart',
-						'user': username,
+						'user': user,
 						'from': chart['from'],
 						'to': chart['to']
 					});
@@ -143,15 +143,16 @@ function go(username) {
 }
 
 function processData(data) {
-	// Remove empty weeks.
-	data = data.filter(function (week) { return week && !week['error']; });
-	var user = data[0]['weeklyartistchart']['@attr']['user'];
+	var weeks = data
+		// Remove empty weeks.
+		.filter(function (week) { return week && !week['error']; })
 	
-	// Normalize the data, as Last.fm is really, really inconsistent...
-	var weeks = data.map(function (week) {
+		// Normalize the data, as Last.fm is really, really inconsistent...
+		.map(function (week) {
 			var rec = week['weeklyartistchart'];			
 			if (rec['artist'])
 				return {
+					user: rec['@attr']['user'],
 					from: 1000 * rec['@attr']['from'],
 					to: 1000 * rec['@attr']['to'],
 					artists: 
@@ -161,6 +162,7 @@ function processData(data) {
 				};
 			
 			return {
+				user: rec['user'],
 				from: 1000 * rec['from'],
 				to: 1000 * rec['to'],
 				artists: []
@@ -169,9 +171,6 @@ function processData(data) {
 		.sort(function (w1, w2) {
 			return w1.from - w2.from;
 		});
-	
-	if (data.length == 0)
-		throw new Error('No data!');
 
 	// Go through each week and count the plays for each artist.
 	var artists = {};
@@ -184,9 +183,12 @@ function processData(data) {
 					name: artist['name'],
 					url: artist['url'],
 					plays: {},
+					
+					// Summary statistics
 					totalPlays: 0,
 					maxPlays: -1,
 					maxWeek: null,
+					startWeek: null,
 					topRank: Infinity
 				};
 			}
@@ -199,21 +201,41 @@ function processData(data) {
 				artists[key].maxPlays = plays;
 				artists[key].maxWeek = week.from;
 			}
+			if (artists[key].startWeek === null)
+				artists[key].startWeek = week.from;
 			if (rank < artists[key].topRank)
 				artists[key].topRank = rank;
 		});
 	});
 	
 	return {
-		user: user,
-		artists: Object.keys(artists).map(function (key) { return artists[key]; }),
-		weeks: weeks,
-		startDate: new Date(weeks[0].from),
-		endDate: new Date(weeks[data.length - 1].to)
+		artists: d3.values(artists),
+		weeks: weeks
 	};
 }
 
 function draw(data) {
+	// Do some filtering...
+	data.artists = data.artists
+		.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
+		.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); })
+		.slice(0, 50)
+		.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); });
+	
+	// Chop off the first 1% of weeks (with data), to remove extreme outliers.
+	data.weeks = data.weeks.slice(d3.bisect(
+		data.weeks.map(function (week) { return week.from; }),
+		d3.quantile(
+			data.artists.map(function (a) { return a.startWeek; }).sort(d3.ascending),
+			0.1
+		)
+	));
+	
+	if (data.weeks.length === 0)
+		throw new Error('No data!');
+	var user = data.weeks[0].user;
+	var startDate = new Date(data.weeks[0].from);
+	var endDate = new Date(data.weeks[data.weeks.length - 1].to);
 
 	var width = 800;
 	var height = 13;
@@ -222,11 +244,9 @@ function draw(data) {
 	var totalHeight = paddingTop + chartHeight;
 	var paddingAxis = 20;
 	
-	// I want 10% of the peaks to be over 120 pixels.
+	// I want 10% of the peaks to be over 120 pixels tall.
 	var maxPlays = d3.quantile(
-		data
-			.artists.map(function (a) { return a.maxPlays; })
-			.sort(d3.ascending),
+		data.artists.map(function (a) { return a.maxPlays; }).sort(d3.ascending),
 		0.9);
 	var scale = 120 / maxPlays;
 	
@@ -237,7 +257,7 @@ function draw(data) {
 	
 	// Year labels.
 	var yearScale = d3.time.scale.utc()
-		.domain([data.startDate, data.endDate])
+		.domain([startDate, endDate])
 		.range([0, width]);
 	timeline
 		.append('g')
@@ -279,8 +299,8 @@ function draw(data) {
 						return [(week.from + week.to) / 2, artist.plays[week.from] || 0];
 					});
 					
-					points.unshift([data.startDate, 0]);
-					points.push([data.endDate, 0]);
+					points.unshift([startDate, 0]);
+					points.push([endDate, 0]);
 					while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
 						points.shift();
 					return line(points);
@@ -356,7 +376,7 @@ function draw(data) {
 
 		return lastfm({
 			'method': 'user.getweeklytrackchart', 
-			'user': data.user,
+			'user': user,
 			'from': week.from / 1000,
 			'to': week.to / 1000
 		})
@@ -380,7 +400,6 @@ function draw(data) {
 					})
 					.then(interrupt)
 					.then(function (result) {
-						console.log(result);
 						var results = result['tracks']['items'];
 						if (results.length && interrupt.running)
 							Player.push(results[0]['preview_url'], {
@@ -515,11 +534,5 @@ function save(fileName, zoom) {
 }
 
 window.onload = function () {
-	var data = processData(JSON.parse(localStorage.lastfmdata));
-	data.artists = data.artists
-		.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
-		.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); })
-		.slice(0, 50)
-		.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); })
-	draw(data);
+	draw(processData(JSON.parse(localStorage.lastfmdata)));
 };
