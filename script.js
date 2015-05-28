@@ -340,13 +340,13 @@ function draw(data) {
 		Player.stop();
 		if (playController)
 			playController.pause();
-		setCursor(data.weeks[i], 'loading');
+		setCursor(data.weeks[i], 'loading', true);
 		
 		playController = new Interrupt();
 		play(i, playController);
 		setTimeout(function () {
 			playController.pause();
-		}, 10000);
+		}, 20000);
 	});
 		
 	var playController = false;
@@ -355,12 +355,26 @@ function draw(data) {
 		.select('#cursor')
 		.style('height', (chartHeight + paddingAxis) + 'px')
 		.style('top', (paddingTop - paddingAxis) + 'px');
-	function setCursor(week, state) {
+	function setCursor(week, state, force) {
 		cursor
 			.classed('loading', state === 'loading')
 			.classed('playing', !!week);
-		if (week)
-			cursor.style('left', yearScale((week.from + week.to) / 2) + 'px');
+		//timeline.classed('highlight', !!week)
+		if (week) {
+			(force ? cursor : cursor.transition().duration(200))
+				.style('left', yearScale((week.from + week.to) / 2) + 'px');
+			
+			var max = d3.max(data.artists, function (artist) { return artist.plays[week.from] || 0; });
+			var scale = d3.scale.linear().domain([0, max]).range([0.2, 1]);
+			timeline
+				.selectAll('.artist')
+				.style('opacity', function (artist) {
+					return scale(artist.plays[week.from] || 0);
+				})
+				//.classed('highlighted', function (artist) { return artist.plays[week.from] > 0; })
+		} else {
+			timeline.selectAll('.artist').style('opacity', 1);
+		}
 	}
 	Player.onstatechange = function (info) {
 		setCursor(info && info.week);

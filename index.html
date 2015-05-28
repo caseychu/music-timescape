@@ -27,12 +27,19 @@
 						fill: #aaa;
 						transform: translate(5px, 16px);
 					}
+					svg.highlight .artist:not(.highlighted) {
+						opacity: 0.2;
+					}
+					.artist {
+						-webkit-transition: opacity 1s;
+						transition: opacity 1s;
+					}
 					.artist path {
 						stroke: #777;
 					}
 					.artist text {
 						fill: #666;
-						transform: translate(4px, 0.4em);
+						transform: translate(4px, 0.2em);
 					}
 				</style>
 			</svg>
