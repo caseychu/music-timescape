@@ -17,6 +17,6 @@ html {
 	display: block;
 }
 #cursor.loading {
-	border-right: 1px solid red;
+	border-right: 1px solid #333;
 	display: block;
 }
