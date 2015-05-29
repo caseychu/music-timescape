@@ -390,6 +390,7 @@ function draw(data) {
 		var week = weeks[0];
 		while (week && week.to <= +date)
 			week = week.next;
+			
 		/*	
 		clearInterval(window.interval);
 		window.interval = setInterval(function () {
@@ -398,6 +399,7 @@ function draw(data) {
 		}, 1500);
 		return;
 		*/
+		
 		loader.stop();
 		player.stop(); // This causes a layout update, even though one is coming up four lines later :/
 		
