@@ -2,6 +2,21 @@ html {
 	font-family: "segoe ui", helvetica, sans-serif;
 	text-align: center;
 }
+body {
+	margin: 0;
+}
+form {
+	padding: 1em;
+	text-align: right;
+	font-size:10pt;
+	background-color: #eee;
+}
+label {
+	padding: 0 3px;
+}
+input, button {
+	padding: 3px;
+}
 
 #container {
 	display: inline-block;

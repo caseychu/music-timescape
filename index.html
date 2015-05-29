@@ -5,7 +5,10 @@
 		<link href="style.css" rel="stylesheet" type="text/css" />
 	</head>
 	<body>
-	
+		<form>
+			<label for="user">Last.fm username:</label> <input id="user" /> <button type="submit" id="go">Load</button>
+		</form>
+		
 		<div id="container">
 			<div id="graph"></div>
 			<div id="cursor"></div>
@@ -44,7 +47,7 @@
 				</style>
 			</svg>
 		</div>
-		<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js" charset="utf-8"></script>
 		<script src="script.js"></script>
 	</body>
 </html>

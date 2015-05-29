@@ -101,8 +101,8 @@ function delay(ms, value) {
 	});
 }
 
-function go(user) {
-	Promise.all([
+function go(user, progress) {
+	return Promise.all([
 		lastfm({
 			'method': 'user.getinfo',
 			'user': user
@@ -131,14 +131,8 @@ function go(user) {
 					});
 				};
 			}),
-			function (n, m, q) {
-				console.log(n + ' out of ' + m, (q - n) + ' running');
-				//return delay(Math.random() * 1000);
-			}
+			progress
 		);
-	}).then(function (data) {
-		localStorage.lastfmdata = JSON.stringify(data);
-		console.log(data);
 	});
 }
 
@@ -546,5 +540,56 @@ function save(fileName, zoom) {
 }
 
 window.onload = function () {
-	draw(processData(JSON.parse(localStorage.lastfmdata)));
+	document.querySelector('form').onsubmit = function () {
+		var user = document.querySelector('#user').value;
+		if (user) {
+			document.querySelector('#go').disabled = true;
+			localStorage.lastfmUser = user;
+			load(user).then(function (data) {
+				document.querySelector('#go').disabled = false;
+				show(user, data);
+			});
+		}
+		return false;
+	};
+	
+	function load(user, localOnly) {
+		if (localStorage['lastfm' + user])
+			return Promise.resolve(JSON.parse(localStorage['lastfm' + user]));
+		
+		if (localOnly)
+			return Promise.reject();
+		
+		var progress = d3.select('form')//.transition();
+		return go(user, function (n, m) {
+			var percentage = n / m * 100 + '%';
+			progress.style('background', 'linear-gradient(90deg, #eee ' + percentage + '%, #f6f6f6 ' + percentage + '%)');
+		}).then(function (data) {
+			try {
+				localStorage['lastfm' + user] = JSON.stringify(data);
+			} catch (e) {} // Exceeded quota.
+			
+			progress.style('background', '');
+			return data;
+		});
+	}
+	
+	var container = document.querySelector('#container');
+	var svg = document.querySelector('#timeline');
+	function show(user, data) {
+		document.querySelector('#user').value = user;
+		container.removeChild(document.querySelector('#timeline'));
+		container.appendChild(svg.cloneNode(true));
+		draw(processData(data));
+	}
+
+	
+	if (localStorage.lastfmUser)
+		load(localStorage.lastfmUser, true).then(function (data) {
+			show(localStorage.lastfmUser, data);
+		}).catch(function () {});
+	else {
+		document.querySelector('#user').focus();
+		document.querySelector('#user').value = 'obscuresecurity';
+	}
 };
