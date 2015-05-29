@@ -407,7 +407,6 @@ function draw(data) {
 		loader.load(week);
 		
 		setTimeout(function () {
-			// Uh, this doesn't seem to work
 			loader.stop();
 		}, 20000);
 	};
@@ -474,7 +473,7 @@ function draw(data) {
 
 function WeeklyTrackLoader(user) {
 	var self = this;
-	var interrupt = new Interrupt();
+	var currentInterrupt = new Interrupt();
 	
 	// Supposed to be overridden.
 	self.chooseTracks = function (tracks) {
@@ -483,14 +482,15 @@ function WeeklyTrackLoader(user) {
 	self.onTrackLoaded = function (track) {};
 	
 	self.stop = function () {
-		interrupt.pause();
-		interrupt = new Interrupt();
+		currentInterrupt.pause();
+		currentInterrupt = new Interrupt();
 	};
 	
-	self.load = function (week) {
+	self.load = function (week, interrupt) {
 		if (!week)
 			return;
-			
+		
+		var interrupt = currentInterrupt;
 		return lastfm({
 			'method': 'user.getweeklytrackchart', 
 			'user': user,
@@ -537,7 +537,7 @@ function WeeklyTrackLoader(user) {
 		})
 		.catch(function () {})
 		.then(function () {
-			return self.load(week.next);
+			return self.load(week.next, currentInterrupt);
 		});
 	}
 }
@@ -603,7 +603,7 @@ function Player() {
 	};
 	self.stop = function () {
 		queue = [];
-		self.next();
+		current = false;
 	};
 	self.push = function (src, info) {
 		var audio = new Audio();
