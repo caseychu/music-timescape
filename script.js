@@ -191,38 +191,43 @@ function processData(data) {
 }
 
 function draw(data) {
+	var aa = data.artists.slice();
+
 	// Do some filtering...
-	data.artists = data.artists
+	var artists = data.artists
 		.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
 		.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); })
 		.slice(0, 50)
 		.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); });
 	
 	// Chop off the first 1% of weeks (with data), to remove extreme outliers.
-	data.weeks = data.weeks.slice(d3.bisect(
-		data.weeks.map(function (week) { return week.from; }),
+	var weeks = data.weeks;
+	weeks = weeks.slice(d3.bisect(
+		weeks.map(function (week) { return week.from; }),
 		d3.quantile(
-			data.artists.map(function (a) { return a.startWeek; }).sort(d3.ascending),
+			artists.map(function (artist) { return artist.startWeek; }).sort(d3.ascending),
 			0.1
 		)
 	));
 	
-	if (data.weeks.length === 0)
+	if (weeks.length === 0)
 		throw new Error('No data!');
-	var user = data.weeks[0].user;
-	var startDate = data.weeks[0].from;
-	var endDate = data.weeks[data.weeks.length - 1].to;
+	
+	var user = weeks[0].user;
+	var startDate = weeks[0].from;
+	var endDate = weeks[weeks.length - 1].to;
 
 	var width = 800;
 	var height = 13;
 	var paddingTop = 100;
-	var chartHeight = height * data.artists.length;
+	var n = 50;
+	var chartHeight = height * n;
 	var totalHeight = paddingTop + chartHeight;
 	var paddingAxis = 20;
 	
 	// I want 10% of the peaks to be over 120 pixels tall.
 	var maxPlays = d3.quantile(
-		data.artists.map(function (a) { return a.maxPlays; }).sort(d3.ascending),
+		artists.map(function (a) { return a.maxPlays; }).sort(d3.ascending),
 		0.9);
 	var scale = 120 / maxPlays;
 	
@@ -239,6 +244,7 @@ function draw(data) {
 		.append('g')
 		.attr('class', 'axis')
 		.attr('transform', 'translate(0,' + (paddingTop - paddingAxis) + ')')
+		.transition()
 		.call(
 			d3.svg.axis()
 				.scale(yearScale)
@@ -253,49 +259,80 @@ function draw(data) {
 				})
 		);
 
-	timeline
-		.selectAll('g.artist')
-		.data(data.artists)
-		.enter()
-		.append('g')
-		.attr('class', 'artist')
-		.attr('transform', function (artist, artistNumber) {
-			return 'translate(0, ' + (height * artistNumber + paddingTop) + ')';
-		})
-		.call(function (artist) {
-			// Artist plots.
-			var line = d3.svg.line()
-				.x(function (plays) { return yearScale(plays[0]); })
-				.y(function (plays) { return -scale * plays[1]; })
-				.interpolate('basis');
-			artist.append('path')
-				.attr('fill', function (artist, i) { return 'hsla(' + (Math.floor(i * 31 % 360)) + ', 100%, 80%, 0.7)'; })
-				.attr('d', function (artist, artistNumber) {
-					var points = data.weeks.map(function (week) {
-						return [(week.from + week.to) / 2, artist.plays[week.from] || 0];
-					});
-					
-					points.unshift([startDate, 0]);
-					points.push([endDate, 0]);
-					while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
-						points.shift();
-					return line(points);
-				})
-				/*
-				.attr('transform', 'scale(1, 0.001)')
-				.transition()
-				.delay(1000)
-				.duration(1500)
-				.attr('transform', 'scale(1, 1)');
-				*/
+/*
+	//document.body.onclick = 
+	setInterval(function () {
+		drawArtists(
+			d3.shuffle(artists).slice(0, 48).concat(
+				d3.shuffle(aa).filter(function (a) { return artists.indexOf(a) === -1; }).slice(0, 2)
+			)
+			.sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); })
+		);
+	}, 2000)
+*/	
+	var line = d3.svg.line()
+		.x(function (plays) { return yearScale(plays[0]); })
+		.y(function (plays) { return -scale * plays[1]; })
+		.interpolate('basis');
+	
+	function drawArtists(artists) {	
+		var rows = timeline.selectAll('g.artist')
+			.data(artists, function (artist) { return artist.name; });
 			
-			// The artist text.
-			artist
-				.append('text')
-				.attr('x', width)
-				.text(function (artist) { return artist.name; });
-		});
+		// Remove rows.
+		rows.exit().call(fadeOut).transition().delay(750).remove();
+			
+		// Add new rows.
+		var addedRows = rows.enter().append('g').attr('class', 'artist').call(fadeOut);
 		
+		// Add artist plots.
+		addedRows
+			.append('path')
+			.attr('fill', function (artist, artistNumber) {
+				return 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)';
+			})
+			.attr('d', function (artist, artistNumber) {
+				var points = weeks.map(function (week) {
+					return [(week.from + week.to) / 2, artist.plays[week.from] || 0];
+				});
+				
+				points.unshift([startDate, 0]);
+				points.push([endDate, 0]);
+				while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
+					points.shift();
+				return line(points);
+			});
+				
+		// The artist text.
+		addedRows
+			.append('text')
+			.attr('x', width)
+			.text(function (artist) { return artist.name; });
+		
+		// Move updated rows to their correct position.
+		rows.order();
+		delay(0).then(function () { fadeIn(rows); });
+		
+		function fadeOut(rows) {
+			rows
+				.style('opacity', 0)
+				.style('transform', function (artist, artistNumber) {
+					var position = height * artistNumber + paddingTop;
+					var t = 0.95;
+					return 'translate(0, ' + ((1-t)*totalHeight + t*position) + 'px)';
+				})
+		}
+		function fadeIn(rows) {
+			rows
+				.style('opacity', 1)
+				.style('transform', function (artist, artistNumber) {
+					var position = height * artistNumber + paddingTop;
+					return 'translate(0, ' + position + 'px)';
+				})
+		}
+	}
+	drawArtists(artists);
+	
 	d3.select('#graph').on('click', function () {
 		var x = d3.mouse(this)[0];
 		if (x > width)
@@ -304,16 +341,16 @@ function draw(data) {
 		// Find the closest week to the one clicked.
 		var date = yearScale.invert(x);
 		var weekLength = 7 * 24 * 60 * 60 * 1000;
-		for (var i = 0; i < data.weeks.length; i++)
-			if (data.weeks[i].to >= +date + weekLength)
+		for (var i = 0; i < weeks.length; i++)
+			if (weeks[i].to >= +date + weekLength)
 				break;
-		if (i >= data.weeks.length)
-			i = data.weeks.length - 1;
+		if (i >= weeks.length)
+			i = weeks.length - 1;
 		
 		Player.stop();
 		if (playController)
 			playController.pause();
-		setCursor(data.weeks[i], 'loading', true);
+		setCursor(weeks[i], 'loading', true);
 		
 		playController = new Interrupt();
 		play(i, playController);
@@ -336,7 +373,7 @@ function draw(data) {
 			(force ? cursor : cursor.transition().duration(200))
 				.style('left', yearScale((week.from + week.to) / 2) + 'px');
 			
-			var max = d3.max(data.artists, function (artist) { return artist.plays[week.from] || 0; });
+			var max = d3.max(artists, function (artist) { return artist.plays[week.from] || 0; });
 			var scale = d3.scale.linear().domain([0, max]).range([0.2, 1]);
 			timeline
 				.selectAll('.artist')
@@ -353,7 +390,7 @@ function draw(data) {
 	};
 	
 	function play(weekNumber, interrupt) {
-		var week = data.weeks[weekNumber];
+		var week = weeks[weekNumber];
 		if (!week)
 			return;
 
