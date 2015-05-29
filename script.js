@@ -273,7 +273,7 @@ function Timescape(startDate, endDate, metrics) {
 		addedRows
 			.append('text')
 			.attr('x', metrics.plotWidth)
-			.text(function (artist) { return artist.name; });
+			.text(function (artist) { return artist.name; }); // To-do: Add a now playing indicator?
 		
 		// Move updated rows to their correct position.
 		rows.order();
@@ -303,8 +303,8 @@ function Timescape(startDate, endDate, metrics) {
 		var x = d3.mouse(this)[0];
 		if (x > metrics.plotWidth)
 			return;
+		d3.event.stopPropagation();
 		self.onTimeSelect(yearScale.invert(x));
-		return false;
 	});
 	
 	var cursor = d3
@@ -385,20 +385,24 @@ function draw(data) {
 		}
 	}
 	
+	document.body.onclick = function () {
+		selectWeek();
+	};
+	
 	timescape.onTimeSelect = function (date) {
 		// Find the closest week to the one clicked.
 		var week = weeks[0];
 		while (week && week.to <= +date)
 			week = week.next;
-			
-		/*	
+	/*		
+		selectWeek(week);
 		clearInterval(window.interval);
 		window.interval = setInterval(function () {
 			if (week)
 				selectWeek(week = week.next);
 		}, 1500);
 		return;
-		*/
+	*/	
 		
 		loader.stop();
 		player.stop(); // This causes a layout update, even though one is coming up four lines later :/
