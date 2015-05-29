@@ -44,7 +44,9 @@ input, button {
 	border-right: 1px solid red;
 	display: block;
 }
+#cursor.seeking {
+	border-right: 1px dotted #333;
+}
 #cursor.loading {
 	border-right: 1px solid #333;
-	display: block;
 }

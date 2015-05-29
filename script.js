@@ -299,25 +299,49 @@ function Timescape(startDate, endDate, metrics) {
 			})
 	}
 	
-	self.onTimeSelect = function (date) {};
-	d3.select('#graph').on('click', function () {
-		var x = d3.mouse(this)[0];
+	function mouseToDate(container) {
+		var x = d3.mouse(container)[0];
+		if (x < 0)
+			return startDate;
 		if (x > metrics.plotWidth)
-			return;
-		d3.event.stopPropagation();
-		self.onTimeSelect(yearScale.invert(x));
-	});
+			return endDate;
+		return yearScale.invert(x);
+	}
+	
+	self.onDateSeek = function (date) {};
+	self.onDateSelect = function (date) {};
+	d3.select('#graph').call(
+		d3.behavior.drag()
+			.on('dragstart', function () {
+				d3.event.sourceEvent.stopPropagation();
+				self.onDateSeek(mouseToDate(this));
+			})
+			.on('drag', function () {
+				d3.event.sourceEvent.stopPropagation();
+				self.onDateSeek(mouseToDate(this));
+			})
+			.on('dragend', function () {
+				d3.event.sourceEvent.stopPropagation();
+				self.onDateSelect(mouseToDate(this));
+			})
+	);
+	d3.select('#container')
+		.on('click', function () {
+			d3.event.stopPropagation();
+		});
 	
 	var cursor = d3
 		.select('#cursor')
 		.style('height', (chartHeight + metrics.yearHeight) + 'px')
 		.style('top', (metrics.paddingTop - metrics.yearHeight) + 'px');
-	self.drawCursor = function (date, shouldTransition, isLoading) {
+	self.drawCursor = function (date, state, shouldTransition) {
 		cursor
-			.classed('loading', isLoading)
-			.classed('playing', !!date);
+			.classed('playing', !!date)
+			.classed('loading', state === 'loading')
+			.classed('seeking', state === 'seeking');
+		//shouldTransition = false; // To-do
 		if (date)
-			(shouldTransition ? cursor : cursor.transition().duration(200))
+			(shouldTransition ? cursor.transition().duration(200) : cursor)
 				.style('left', yearScale(date) + 'px');
 	};
 }
@@ -335,7 +359,7 @@ function draw(data) {
 	
 	// The state.
 	var currentWeek = false;
-	var currentLoadingState = false;
+	var currentCursorState = false;
 	var currentArtists = augmentArtists(chooseArtists());
 	
 	var timescape = new Timescape(startDate, endDate, {
@@ -374,18 +398,18 @@ function draw(data) {
 	};
 	loader.shouldContinue = function () {
 		// Throttle downloads once we get enough.
-		return player.getQueueLength() < 6;
+		return player.getQueueLength() < 9;
 	};
 	
 	// To-do: Play a variable amount of the song depending on how many plays it got.
 	
-	function selectWeek(week, loadingState) {
-		if (week !== currentWeek || loadingState !== currentLoadingState) {
+	function selectWeek(week, state) {
+		if (week !== currentWeek || state !== currentCursorState) {
 			currentWeek = week;
-			currentLoadingState = loadingState;
+			currentCursorState = state;
 			currentArtists = augmentArtists(chooseArtists());
 			
-			timescape.drawCursor(week && (week.from + week.to) / 2, !loadingState, loadingState);
+			timescape.drawCursor(week && (week.from + week.to) / 2, state, !state);
 			timescape.drawArtists(currentArtists);
 		}
 	}
@@ -396,11 +420,19 @@ function draw(data) {
 		selectWeek();
 	};
 	
-	timescape.onTimeSelect = function (date) {
+	function dateToWeek(date) {
 		// Find the closest week to the one clicked.
 		var week = weeks[0];
 		while (week && week.to <= +date)
 			week = week.next;
+		return week || weeks[weeks.length - 1];
+	}
+	
+	timescape.onDateSeek = function (date) {
+		selectWeek(dateToWeek(date), 'seeking');
+	};
+	
+	timescape.onDateSelect = function (date) {
 	/*		
 		selectWeek(week);
 		clearInterval(window.interval);
@@ -410,16 +442,18 @@ function draw(data) {
 		}, 1500);
 		return;
 	*/	
-		
 		loader.stop();
 		player.stop(); // This causes a layout update, even though one is coming up four lines later :/
+		recentlyChosen = [];
 		
-		selectWeek(week, true);
+		var week = dateToWeek(date);
+		selectWeek(week, 'loading');
 		loader.load(week);
 	};
 	
 	player.onStateChange = function (info) {
-		selectWeek(info && info.week);
+		if (currentCursorState !== 'seeking')
+			selectWeek(info && info.week);
 		if (info)
 			console.log('Now playing', new Date(info.week.from).toString());
 		//console.log(info ? info.trackName + ' - ' + info.artist : '');
