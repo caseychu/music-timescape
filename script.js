@@ -1,14 +1,3 @@
-function generateTimeSeries() {
-	var offset = 0;
-	var period = 75 * Math.random() + 5;
-	var amplitude = 1 * Math.random() + 0.1;
-	var series = [];
-	for (var i = 0; i < 300; i++)
-		//series.push(amplitude * Math.pow(Math.sin(3.14 * i / period), 2) + offset);
-		series.push(Math.random());
-	return series;
-}
-
 function stringify(obj) {
 	return Object.keys(obj).map(function (key) {
 		return encodeURIComponent(key) + '=' + encodeURIComponent(obj[key])
@@ -36,17 +25,10 @@ var lastfm = (function () {
 			
 			// Make the request.
 			var script = document.createElement('script');
+			script.onerror = reject;
 			script.src = 'http://ws.audioscrobbler.com/2.0/?' + stringify(obj);
 			document.body.appendChild(script);
-		})/*.catch(function (error) {
-			// Retry the request.
-			console.error(obj, error);
-			return new Promise(function (resolve) {
-				setTimeout(function () {
-					lastfm(obj).then(resolve);
-				}, 5000);
-			});
-		});*/
+		});
 	};
 }());
 
@@ -325,11 +307,8 @@ function draw(data) {
 		for (var i = 0; i < data.weeks.length; i++)
 			if (data.weeks[i].to >= +date + weekLength)
 				break;
-		
-		if (i === data.weeks.length) {
-			debugger;
-			throw new Error('why?')
-		}
+		if (i >= data.weeks.length)
+			i = data.weeks.length - 1;
 		
 		Player.stop();
 		if (playController)
@@ -353,7 +332,6 @@ function draw(data) {
 		cursor
 			.classed('loading', state === 'loading')
 			.classed('playing', !!week);
-		//timeline.classed('highlight', !!week)
 		if (week) {
 			(force ? cursor : cursor.transition().duration(200))
 				.style('left', yearScale((week.from + week.to) / 2) + 'px');
@@ -365,7 +343,6 @@ function draw(data) {
 				.style('opacity', function (artist) {
 					return scale(artist.plays[week.from] || 0);
 				})
-				//.classed('highlighted', function (artist) { return artist.plays[week.from] > 0; })
 		} else {
 			timeline.selectAll('.artist').style('opacity', 1);
 		}
@@ -480,12 +457,12 @@ var Player = (function () {
 		if (current)
 			fade(current, 1, 0, stopDuration).then(current.pause.bind(current));
 		current = queue.shift();
-		self.onstatechange(current && current.info);
-	}
+		self.onstatechange(current && current.info, queue.map(function (item) { return item.info; }));
+	};
 	self.stop = function () {
 		queue = [];
 		self.next();
-	}
+	};
 	self.push = function (src, info) {
 		var audio = new Audio();
 		audio.ontimeupdate = function () {
@@ -496,6 +473,7 @@ var Player = (function () {
 				self.play();
 			}
 		};
+		// audio.onerror = function () {} // How to deal with errors?
 		audio.preload = 'auto';
 		audio.src = src;
 		audio.info = info;
@@ -505,9 +483,8 @@ var Player = (function () {
 			self.next();
 			self.play();
 		}
-	}
-
-	self.onstatechange = function () {};
+	};
+	self.onstatechange = function (current, queue) {};
 	
 	return self;
 }());
