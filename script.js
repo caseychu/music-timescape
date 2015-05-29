@@ -285,7 +285,8 @@ function Timescape(startDate, endDate, metrics) {
 			.style('opacity', 0)
 			.style('transform', function (artist, artistNumber) {
 				var position = metrics.paddingTop + metrics.rowHeight * artistNumber;
-				var t = 0.95;
+				//var t = 0.95;
+				var t = 1 // To-do: no fancy animation seems to looks better
 				return 'translate(0, ' + ((1-t)*totalHeight + t*position) + 'px)';
 			})
 	}
@@ -371,6 +372,10 @@ function draw(data) {
 		recentlyChosen = recentlyChosen.concat(choices.map(function (track) { return track.trackName; })).slice(-24);
 		return d3.shuffle(choices);
 	};
+	loader.shouldContinue = function () {
+		// Throttle downloads once we get enough.
+		return player.getQueueLength() < 6;
+	};
 	
 	// To-do: Play a variable amount of the song depending on how many plays it got.
 	
@@ -386,6 +391,8 @@ function draw(data) {
 	}
 	
 	document.body.onclick = function () {
+		loader.stop();
+		player.stop();
 		selectWeek();
 	};
 	
@@ -409,15 +416,13 @@ function draw(data) {
 		
 		selectWeek(week, true);
 		loader.load(week);
-		
-		setTimeout(function () {
-			loader.stop();
-		}, 20000);
 	};
 	
 	player.onStateChange = function (info) {
 		selectWeek(info && info.week);
-		console.log(info ? info.trackName + ' - ' + info.artist : '');
+		if (info)
+			console.log('Now playing', new Date(info.week.from).toString());
+		//console.log(info ? info.trackName + ' - ' + info.artist : '');
 	};
 	
 	function chooseArtists() {
@@ -485,11 +490,20 @@ function WeeklyTrackLoader(user) {
 	};
 	self.onTrackLoaded = function (track) {};
 	
+	self.shouldContinue = function () { return true; };
+	setInterval(function () {
+		if (self.shouldContinue())
+			currentInterrupt.resume();
+		else
+			currentInterrupt.pause();
+	}, 1000);
+	
 	self.stop = function () {
 		currentInterrupt.pause();
 		currentInterrupt = new Interrupt();
 	};
 	
+	// To-do: what if this doesn't load in time to play?
 	self.load = function (week, interrupt) {
 		if (!week)
 			return;
@@ -541,6 +555,7 @@ function WeeklyTrackLoader(user) {
 		})
 		.catch(function () {})
 		.then(function () {
+			console.log('Done loading: ', new Date(week.from).toString())
 			return self.load(week.next, currentInterrupt);
 		});
 	}
@@ -607,6 +622,8 @@ function Player() {
 	};
 	self.stop = function () {
 		queue = [];
+		if (current)
+			fade(current, 1, 0, stopDuration).then(current.pause.bind(current));
 		current = false;
 	};
 	self.push = function (src, info) {
@@ -630,6 +647,10 @@ function Player() {
 			self.play();
 		}
 	};
+	self.getQueueLength = function () {
+		return queue.length;
+	};
+	
 	self.onStateChange = function (current, queue) {};
 }
 
