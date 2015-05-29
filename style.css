@@ -38,6 +38,7 @@ input, button {
 #cursor {
 	position: absolute;
 	display: none;
+	-webkit-transition: border-color 500ms;
 }
 #cursor.playing {
 	border-right: 1px solid red;

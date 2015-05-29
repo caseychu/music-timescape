@@ -348,6 +348,8 @@ function draw(data) {
 		player.push(track.spotify['preview_url'], track);
 	};
 	loader.chooseTracks = function (tracks) {
+		// To-do: It's annoying when it prematurely exhausts an artist before its peak
+	
 		// Avoid songs that have been played.
 		var choices = tracks.filter(function (track) {
 			return recentlyChosen.indexOf(track.trackName) === -1;
@@ -360,8 +362,10 @@ function draw(data) {
 		return d3.shuffle(choices);
 	};
 	
+	// To-do: Play a variable amount of the song depending on how many plays it got.
+	
 	function selectWeek(week, loadingState) {
-		if (week !== currentWeek && loadingState !== currentLoadingState) {
+		if (week !== currentWeek || loadingState !== currentLoadingState) {
 			currentWeek = week;
 			currentLoadingState = loadingState;
 			currentArtists = augmentArtists(chooseArtists());
@@ -384,6 +388,7 @@ function draw(data) {
 		loader.load(weeksAfter);
 		
 		setTimeout(function () {
+			// Uh, this doesn't seem to work
 			loader.stop();
 		}, 20000);
 	};
@@ -399,6 +404,7 @@ function draw(data) {
 	};
 	
 	function chooseArtists() {
+		// To-do: choose to show artists based on e.g. what's currently playing
 		return artists
 			.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
 			.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); })
@@ -539,14 +545,15 @@ function Player() {
 	function fade(audio, from, to, duration) {
 		return new Promise(function (resolve) {
 			var scale = d3.scale.linear().domain([0, duration]).range([from, to]).clamp(true);
-			d3.timer(function (t) {
-				audio.volume = scale(t);
-				if (t > duration) {
+			var t = Date.now();
+			(function step() {
+				var dt = Date.now() - t;
+				audio.volume = scale(dt);
+				if (dt > duration)
 					resolve();
-					return true;
-				}
-				return false;
-			});
+				else
+					setTimeout(step, 60);
+			}());
 		});
 	}
 	
@@ -554,6 +561,7 @@ function Player() {
 	var queue = [];
 	self.play = function () {
 		if (current) {
+			// To do: start fade-in only when the audio has started
 			fade(current, 0, 1, startDuration);
 			current.play();
 		}
@@ -570,7 +578,7 @@ function Player() {
 	};
 	self.push = function (src, info) {
 		var audio = new Audio();
-		audio.ontimeupdate = function () {
+		audio.ontimeupdate = function () {		
 			// To do: what if the audio pauses automatically to buffer?
 			if (audio.ended || audio.currentTime + 2*stopDuration/1000 > audio.duration || (audio.currentTime > 5 && queue.length)) {
 				audio.ontimeupdate = null;
