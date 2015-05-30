@@ -10,14 +10,15 @@
 		</form>
 		
 		<div id="container">
-			<div id="graph"></div>
+			<div id="plot"></div>
 			<div id="cursor"></div>
 			<!-- Inline styles so styles are used when user saves the image -->
 			<svg xmlns="http://www.w3.org/2000/svg" id="timeline">
 				<style scoped>
 					svg {
 						font-family: 'segoe ui', helvetica, sans-serif;
-						font-size: 12px;
+						font-size: 16px;
+						overflow: visible;
 					}
 					.axis .domain {
 						display: none;
@@ -28,7 +29,7 @@
 					.axis text {
 						text-anchor: start !important;
 						fill: #aaa;
-						transform: translate(5px, 16px);
+						transform: translate(8px, 19px);
 					}
 					.artist {
 						-webkit-transition:
@@ -37,6 +38,7 @@
 					}
 					.artist path {
 						stroke: #777;
+						stroke-width: 1.2px;
 					}
 					.artist text {
 						fill: #666;

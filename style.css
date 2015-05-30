@@ -21,17 +21,14 @@ input, button {
 #container {
 	display: inline-block;
 	position: relative;
-	overflow: hidden;
 	
 	cursor: default;
 	-moz-user-select: none;
 	-webkit-user-select: none;
 	user-select: none;
 }
-#graph {
+#plot {
 	position: absolute;
-	width: 800px;
-	top: 80px;
 	bottom: 0;
 	cursor: pointer;
 }

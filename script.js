@@ -213,17 +213,17 @@ function Timescape(startDate, endDate, metrics) {
 	var self = this;
 	
 	var chartHeight = metrics.rows * metrics.rowHeight;
-	var totalWidth = metrics.plotWidth + metrics.artistWidth;
+	var plotWidth = metrics.width - metrics.artistWidth;
 	var totalHeight = metrics.paddingTop + chartHeight;
 	
 	var timeline = d3
 		.select('#timeline')
-		.attr('width', totalWidth)
+		.attr('width', metrics.width)
 		.attr('height', totalHeight);
 	
 	var yearScale = d3.time.scale.utc()
 		.domain([startDate, endDate])
-		.range([0, metrics.plotWidth]);
+		.range([0, plotWidth]);
 	
 	// Year labels.
 	timeline
@@ -239,7 +239,7 @@ function Timescape(startDate, endDate, metrics) {
 				.tickSize(-(chartHeight + metrics.yearHeight), 0)
 				.tickFormat(function (yearDate) {
 					// Only show the year if there's enough room
-					if (metrics.plotWidth - yearScale(yearDate) < 30)
+					if (plotWidth - yearScale(yearDate) < 45)
 						return '';
 					return yearDate.getUTCFullYear();
 				})
@@ -272,10 +272,10 @@ function Timescape(startDate, endDate, metrics) {
 		// The artist text.
 		addedRows
 			.append('text')
-			.attr('x', metrics.plotWidth)
+			.attr('x', plotWidth)
 			.text(function (artist) { return artist.name; }); // To-do: Add a now playing indicator?
 		
-		// Move updated rows to their correct position.
+		// Move updated rows to their correct position and opacity.
 		rows.order();
 		delay(0).then(function () { fadeIn(rows); });
 	}
@@ -303,28 +303,31 @@ function Timescape(startDate, endDate, metrics) {
 		var x = d3.mouse(container)[0];
 		if (x < 0)
 			return startDate;
-		if (x > metrics.plotWidth)
+		if (x > plotWidth)
 			return endDate;
 		return yearScale.invert(x);
 	}
 	
 	self.onDateSeek = function (date) {};
 	self.onDateSelect = function (date) {};
-	d3.select('#graph').call(
-		d3.behavior.drag()
-			.on('dragstart', function () {
-				d3.event.sourceEvent.stopPropagation();
-				self.onDateSeek(mouseToDate(this));
-			})
-			.on('drag', function () {
-				d3.event.sourceEvent.stopPropagation();
-				self.onDateSeek(mouseToDate(this));
-			})
-			.on('dragend', function () {
-				d3.event.sourceEvent.stopPropagation();
-				self.onDateSelect(mouseToDate(this));
-			})
-	);
+	d3.select('#plot')
+		.style('width', plotWidth + 'px')
+		.style('top', (metrics.paddingTop - metrics.yearHeight) + 'px')
+		.call(
+			d3.behavior.drag()
+				.on('dragstart', function () {
+					d3.event.sourceEvent.stopPropagation();
+					self.onDateSeek(mouseToDate(this));
+				})
+				.on('drag', function () {
+					d3.event.sourceEvent.stopPropagation();
+					self.onDateSeek(mouseToDate(this));
+				})
+				.on('dragend', function () {
+					d3.event.sourceEvent.stopPropagation();
+					self.onDateSelect(mouseToDate(this));
+				})
+		);
 	d3.select('#container')
 		.on('click', function () {
 			d3.event.stopPropagation();
@@ -339,7 +342,6 @@ function Timescape(startDate, endDate, metrics) {
 			.classed('playing', !!date)
 			.classed('loading', state === 'loading')
 			.classed('seeking', state === 'seeking');
-		//shouldTransition = false; // To-do
 		if (date)
 			(shouldTransition ? cursor.transition().duration(200) : cursor)
 				.style('left', yearScale(date) + 'px');
@@ -363,11 +365,11 @@ function draw(data) {
 	var currentArtists = augmentArtists(chooseArtists());
 	
 	var timescape = new Timescape(startDate, endDate, {
-		artistWidth: 130,
+		artistWidth: 150,
 		paddingTop: 100,
-		plotWidth: 800,
-		yearHeight: 20,
-		rowHeight: 13,
+		width: d3.select('body').node().getBoundingClientRect().width * 0.9, // To-do: rescale on resize
+		yearHeight: 30,
+		rowHeight: 17,
 		rows: currentArtists.length,
 		
 		// I want 10% of the peaks to be over 120 pixels tall.
@@ -664,7 +666,7 @@ function Player() {
 		var audio = new Audio();
 		audio.ontimeupdate = function () {		
 			// To do: what if the audio pauses automatically to buffer?
-			if (audio.ended || audio.currentTime + 2*stopDuration/1000 > audio.duration || (audio.currentTime > 5 && queue.length)) {
+			if (audio.ended || audio.currentTime + 2*stopDuration/1000 > audio.duration || (audio.currentTime > 7 && queue.length)) {
 				audio.ontimeupdate = null;
 				self.next();
 				self.play();
