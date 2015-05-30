@@ -151,8 +151,11 @@ function processData(data) {
 	// Go through each week and count the plays for each artist.
 	var artists = {};
 	weeks.forEach(function (week, weekNumber) {	
+		week.totalPlays = d3.sum(week.artists.map(function (artist) { return +artist['playcount']; }));
+		week.maxPlays = d3.max(week.artists.map(function (artist) { return +artist['playcount']; })); 
+		
 		week.artists.forEach(function (artist, rank) {
-			var key = artist['name'] + artist['mbid'];
+			var key = artist['name'].replace('œ', 'oe') //+ artist['mbid'];
 			// Create a new entry for this artist if it doesn't exist.
 			if (!artists[key]) {
 				artists[key] = {
@@ -261,6 +264,14 @@ function Timescape(startDate, endDate, metrics) {
 		// Add new rows.
 		var addedRows = rows.enter().append('g').attr('class', 'artist').call(fadeOut);
 		
+		addedRows
+			.append('rect')
+			.attr('x', function (artist) { return yearScale(artist.firstPeakWeek) - 7.5; })
+			.attr('y', -7.5)
+			.attr('width', 15)
+			.attr('height', 15)
+			.attr('fill', 'yellow')
+		
 		// Add artist plots.
 		addedRows
 			.append('path')
@@ -287,6 +298,7 @@ function Timescape(startDate, endDate, metrics) {
 				var position = metrics.paddingTop + metrics.rowHeight * artistNumber;
 				//var t = 0.95;
 				var t = 1 // To-do: no fancy animation seems to looks better
+				// To-do: set to where it would have been
 				return 'translate(0, ' + ((1-t)*totalHeight + t*position) + 'px)';
 			})
 	}
@@ -313,6 +325,9 @@ function Timescape(startDate, endDate, metrics) {
 	d3.select('#plot')
 		.style('width', plotWidth + 'px')
 		.style('top', (metrics.paddingTop - metrics.yearHeight) + 'px')
+		.on('mousemove', function () {
+			//self.onDateSeek(mouseToDate(this));
+		})
 		.call(
 			d3.behavior.drag()
 				.on('dragstart', function () {
@@ -432,18 +447,9 @@ function draw(data) {
 	
 	timescape.onDateSeek = function (date) {
 		selectWeek(dateToWeek(date), 'seeking');
-	};
+	};	
 	
-	timescape.onDateSelect = function (date) {
-	/*		
-		selectWeek(week);
-		clearInterval(window.interval);
-		window.interval = setInterval(function () {
-			if (week)
-				selectWeek(week = week.next);
-		}, 1500);
-		return;
-	*/	
+	timescape.onDateSelect = function (date) {	
 		loader.stop();
 		player.stop(); // This causes a layout update, even though one is coming up four lines later :/
 		recentlyChosen = [];
@@ -461,39 +467,43 @@ function draw(data) {
 		//console.log(info ? info.trackName + ' - ' + info.artist : '');
 	};
 	
-	function chooseArtists() {
-		if (currentWeek) {
-			artists.forEach(function (artist, i) {
-				artist.score = 
-					4 * artist.playFrequency * 30 * 24 * 60 * 60 * 1000 +
-					(3 * artist.plays[currentWeek.from] || 0) + 
-					(2 * (currentWeek.next ? artist.plays[currentWeek.next.from] : artist.plays[currentWeek.from]) || 0) + 
-					((currentWeek.next && currentWeek.next.next ? artist.plays[currentWeek.next.next.from] : artist.plays[currentWeek.from]) || 0) + 
-					(2 * (currentWeek.prev ? artist.plays[currentWeek.prev.from] : artist.plays[currentWeek.from]) || 0) +
-					((currentWeek.prev && currentWeek.prev.prev ? artist.plays[currentWeek.prev.prev.from] : artist.plays[currentWeek.from]) || 0)
-				/*artist.score = artist.totalPlays + (
-					artist.plays[currentWeek.from] * 3 + 
-					(currentWeek.next ? artist.plays[currentWeek.next.from] : artist.plays[currentWeek.from]) + 
-					(currentWeek.prev ? artist.plays[currentWeek.prev.from] : artist.plays[currentWeek.from])
-				|| 0);*/
-			});
-			artists.sort(function (a1, a2) { return -(a1.score - a2.score); });
-		} else
-			artists.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
+	function normal(x, s) {
+		return Math.exp(-Math.abs(x) / s) / 2;
+	}
 	
+	function chooseArtists() {
+		var selection = artists.slice();
+		if (currentWeek) {
+			selection.forEach(function (artist) {
+				// To-do: This is really, really slow
+				var day = 24 * 60 * 60 * 1000;
+				artist.score = 0;
+				for (var week in artist.plays) {
+					var d = week - currentWeek.from;
+					artist.score += artist.plays[week] * (
+						4 * (d === 0 ? 1 + artist.plays[week] / currentWeek.totalPlays : 0) +
+						5 * normal(d, 28 * day) +
+						1 * normal(d, 365 * day)
+						/*+
+						(1 / 30) * 1*/
+					);
+				}
+			});
+			selection.sort(function (a1, a2) { return -(a1.score - a2.score); });
+		} else
+			selection.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
+		
 		// To-do: choose to show artists based on e.g. what's currently playing
 			//.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
-		return artists.slice(0, 50).sort(function (a1, a2) { return -(a1.maxWeek - a2.maxWeek); });
+		return selection.slice(0, 35);
 	}
 	
 	// Calculate some extra values needed for rendering the artist.
 	function augmentArtists(artists) {
 	
 		// Highlight the ones with the most plays this week.
-		if (currentWeek) {
-			var mostPlays = d3.max(artists, function (artist) { return artist.plays[currentWeek.from] || 0; });
-			var relevanceScale = d3.scale.linear().domain([0, mostPlays]).range([0.2, 1]);
-		}
+		if (currentWeek)
+			var relevanceScale = d3.scale.linear().domain([0, currentWeek.maxPlays]).range([0.2, 1]);
 		
 		artists.forEach(function (artist) {
 			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from] || 0) : 1;
@@ -509,10 +519,21 @@ function draw(data) {
 				// Leave just one zero before the first non-zero point.
 				while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
 					points.shift();
+				
+				var weights = artist.points.map(function (pt) {
+					return pt * pt / artist.totalPlays;
+				})
+				
+				// Find the first week with above-average number of plays.
+				var averagePlays = d3.mean(d3.values(artist.plays));
+				artist.firstPeakWeek = d3.min(
+					points.filter(function (point) { return point[1] >= averagePlays; }),
+					function (point) { return point[0]; }
+				) + Math.random(); // So that sorting is stable.
 			}
 		});
 		
-		return artists;
+		return artists.sort(function (a1, a2) { return -(a1.firstPeakWeek - a2.firstPeakWeek); });
 	}
 }
 
@@ -666,7 +687,7 @@ function Player() {
 		var audio = new Audio();
 		audio.ontimeupdate = function () {		
 			// To do: what if the audio pauses automatically to buffer?
-			if (audio.ended || audio.currentTime + 2*stopDuration/1000 > audio.duration || (audio.currentTime > 7 && queue.length)) {
+			if (audio.ended || audio.currentTime + 2*stopDuration/1000 > audio.duration || (audio.currentTime > 5 && queue.length)) {
 				audio.ontimeupdate = null;
 				self.next();
 				self.play();
@@ -761,6 +782,7 @@ window.onload = function () {
 		draw(processData(data));
 	}
 
+	// To-do: read the hash
 	if (localStorage.lastfmUser)
 		load(localStorage.lastfmUser, true).then(function (data) {
 			show(localStorage.lastfmUser, data);
