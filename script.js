@@ -409,7 +409,6 @@ function draw(data) {
 	// State.
 	var currentWeek = false;
 	var currentCursorState = false;
-	var currentArtists = augmentArtists(chooseArtists());
 	renderAll();
 	function renderAll() {
 		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('form').clientHeight);
@@ -417,13 +416,12 @@ function draw(data) {
 		timescape.metrics.rows = Math.floor((usableHeight - timescape.metrics.paddingTop) / timescape.metrics.rowHeight);
 		
 		// I want 10% of the peaks to be over 120 pixels tall.
-		timescape.metrics.plotScale = 120 / d3.quantile(currentArtists.map(function (a) { return a.maxPlays; }).sort(d3.ascending), 0.9);
+		timescape.metrics.plotScale = 120 / d3.quantile(chooseArtists().map(function (a) { return a.maxPlays; }).sort(d3.ascending), 0.9);
 		
-		currentArtists = augmentArtists(chooseArtists());
 		timescape.init();
 		timescape.drawAxes();
 		timescape.drawCursor(currentWeek, currentCursorState);
-		timescape.drawArtists(currentArtists);
+		timescape.drawArtists(chooseArtists());
 	}
 	
 	var resizeTimeout = false;
@@ -463,10 +461,9 @@ function draw(data) {
 		if (week !== currentWeek || state !== currentCursorState) {
 			currentWeek = week;
 			currentCursorState = state;
-			currentArtists = augmentArtists(chooseArtists());
 			
 			timescape.drawCursor(week && (week.from + week.to) / 2, state, !state);
-			timescape.drawArtists(currentArtists);
+			timescape.drawArtists(chooseArtists());
 		}
 	}
 	
@@ -534,18 +531,15 @@ function draw(data) {
 		
 		// To-do: choose to show artists based on e.g. what's currently playing
 			//.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
-		return selection;
-	}
+		
+		selection = selection.slice(0, timescape.metrics.rows);
 	
-	// Calculate some extra values needed for rendering the artist.
-	function augmentArtists(artists) {
-		artists = artists.slice(0, timescape.metrics.rows);
-	
+		// Calculate some extra values needed for rendering the artist.
 		// Highlight the ones with the most plays this week.
 		if (currentWeek)
 			var relevanceScale = d3.scale.linear().domain([0, currentWeek.maxPlays]).range([0.2, 1]);
 		
-		artists.forEach(function (artist) {
+		selection.forEach(function (artist) {
 			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from] || 0) : 1;
 			
 			// Calculate a time series for this artist. (We only need to do this once.)
@@ -573,7 +567,7 @@ function draw(data) {
 			}
 		});
 		
-		return artists.sort(function (a1, a2) { return -(a1.firstPeakWeek - a2.firstPeakWeek); });
+		return selection.sort(function (a1, a2) { return -(a1.firstPeakWeek - a2.firstPeakWeek); });
 	}
 }
 
