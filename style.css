@@ -34,12 +34,12 @@ input, button {
 }
 #cursor {
 	position: absolute;
-	display: none;
+	pointer-events: none;
+	border-right: 1px solid rgba(0, 0, 0, 0);
 	-webkit-transition: border-color 500ms;
 }
 #cursor.playing {
 	border-right: 1px solid red;
-	display: block;
 }
 #cursor.seeking {
 	border-right: 1px dotted #333;

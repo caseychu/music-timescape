@@ -7,7 +7,6 @@ To-do:
  - Investigate audio stoppage
  - Improve update animation: transform, then opacity
  - Improve relevance-to-opacity translation
- - Fade cursor in and out
  - Improve UI
  - Write readme and release!
 */
@@ -237,7 +236,7 @@ function Timescape(startDate, endDate) {
 		timeline.selectAll('g.axis').remove();
 		timeline.selectAll('g.artist').remove();
 		container.style('display', '');
-		cursor.transition().duration(1000).style('opacity', 1);
+		cursor.transition().delay(750).duration(1000).style('opacity', 1);
 		
 		chartHeight = self.metrics.rows * self.metrics.rowHeight;
 		plotWidth = self.metrics.width - self.metrics.artistWidth;
