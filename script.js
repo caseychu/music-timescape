@@ -772,20 +772,7 @@ function save(fileName, zoom) {
 	img.src = window.URL.createObjectURL(new Blob([timeline.outerHTML], {'type': 'image/svg+xml'}));
 }
 
-window.onload = function () {
-	document.querySelector('form').onsubmit = function () {
-		var user = document.querySelector('#user').value;
-		if (user) {
-			document.querySelector('#go').disabled = true;
-			localStorage.lastfmUser = user;
-			load(user).then(function (data) {
-				document.querySelector('#go').disabled = false;
-				show(user, data);
-			});
-		}
-		return false;
-	};
-	
+window.onload = function () {	
 	function load(user, localOnly) {
 		if (localStorage['lastfm' + user])
 			return Promise.resolve(JSON.parse(localStorage['lastfm' + user]));
@@ -807,21 +794,33 @@ window.onload = function () {
 		});
 	}
 	
+	document.querySelector('form').onsubmit = function () {
+		var user = document.querySelector('#user').value;
+		window.location.hash = '#' + user;
+		return false;
+	};
+	
 	var container = document.querySelector('#container');
 	var svg = document.querySelector('#timeline');
-	function show(user, data) {
-		document.querySelector('#user').value = user;
-		container.removeChild(document.querySelector('#timeline'));
-		container.appendChild(svg.cloneNode(true));
-		draw(processData(data));
-	}
+	window.onhashchange = function () {
+		var user = window.location.hash.replace(/^#/, '');
+		if (user) {
+			document.querySelector('#user').value = user;
+			document.querySelector('#go').disabled = true;
+			load(user).then(function (data) {
+				document.querySelector('#go').disabled = false;
+				
+				container.removeChild(document.querySelector('#timeline'));
+				container.appendChild(svg.cloneNode(true));
+				draw(processData(data));
+			}).catch(function () {});
+		}
+	};
+	
+	window.onhashchange();
 
-	// To-do: read the hash
-	if (localStorage.lastfmUser)
-		load(localStorage.lastfmUser, true).then(function (data) {
-			show(localStorage.lastfmUser, data);
-		}).catch(function () {});
-	else {
+	// Set a default.
+	if (!window.location.hash.replace(/^#/, '')) {
 		document.querySelector('#user').focus();
 		document.querySelector('#user').value = 'obscuresecurity';
 	}
