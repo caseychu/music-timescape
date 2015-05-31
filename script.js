@@ -1,3 +1,17 @@
+/*
+To-do:
+ - Better song choices
+ - Better sorting order
+ - Speed of filtering and sorting
+ - Variable play time
+ - Investigate audio stoppage
+ - Resize graph when window is resized
+ - Improve update animation: transform, then opacity
+ - URL hash-based loading
+ - Improve UI
+ - Write readme and release!
+*/
+
 function stringify(obj) {
 	return Object.keys(obj).map(function (key) {
 		return encodeURIComponent(key) + '=' + encodeURIComponent(obj[key])
@@ -298,7 +312,7 @@ function Timescape(startDate, endDate, metrics) {
 				var position = metrics.paddingTop + metrics.rowHeight * artistNumber;
 				//var t = 0.95;
 				var t = 1 // To-do: no fancy animation seems to looks better
-				// To-do: set to where it would have been
+				// To-do: transform transition and then opacity transition
 				return 'translate(0, ' + ((1-t)*totalHeight + t*position) + 'px)';
 			})
 	}
