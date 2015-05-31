@@ -5,7 +5,6 @@ To-do:
  - Speed of filtering and sorting
  - Variable play time
  - Investigate audio stoppage
- - Resize graph when window is resized
  - Improve update animation: transform, then opacity
  - URL hash-based loading
  - Improve UI
@@ -226,45 +225,71 @@ function processData(data) {
 	};
 }
 
-function Timescape(startDate, endDate, metrics) {
+function Timescape(startDate, endDate) {
 	var self = this;
+	var timeline = d3.select('#timeline');
+	var cursor = d3.select('#cursor');
+	var chartHeight, plotWidth, totalHeight, yearScale;
 	
-	var chartHeight = metrics.rows * metrics.rowHeight;
-	var plotWidth = metrics.width - metrics.artistWidth;
-	var totalHeight = metrics.paddingTop + chartHeight;
+	self.init = function () {
+		timeline.selectAll('g.axis').remove();
+		timeline.selectAll('g.artist').remove();
+		
+		chartHeight = self.metrics.rows * self.metrics.rowHeight;
+		plotWidth = self.metrics.width - self.metrics.artistWidth;
+		totalHeight = self.metrics.paddingTop + self.metrics.yearHeight + chartHeight;
+		yearScale = d3.time.scale.utc()
+			.domain([startDate, endDate])
+			.range([0, plotWidth]);
+	};
 	
-	var timeline = d3
-		.select('#timeline')
-		.attr('width', metrics.width)
-		.attr('height', totalHeight);
+	self.metrics = {
+		artistWidth: 150,
+		paddingTop: 70,
+		yearHeight: 30,
+		rowHeight: 17,
+		width: 800,
+		rows: 35,
+		plotScale: 0.5
+	};
 	
-	var yearScale = d3.time.scale.utc()
-		.domain([startDate, endDate])
-		.range([0, plotWidth]);
+	self.init();
 	
-	// Year labels.
-	timeline
-		.append('g')
-		.attr('class', 'axis')
-		.attr('transform', 'translate(0,' + (metrics.paddingTop - metrics.yearHeight) + ')')
-		.transition()
-		.call(
-			d3.svg.axis()
-				.scale(yearScale)
-				.orient('top')
-				.ticks(d3.time.year.utc, 1)
-				.tickSize(-(chartHeight + metrics.yearHeight), 0)
-				.tickFormat(function (yearDate) {
-					// Only show the year if there's enough room
-					if (plotWidth - yearScale(yearDate) < 45)
-						return '';
-					return yearDate.getUTCFullYear();
-				})
-		);
+	self.drawAxes = function () {
+		timeline
+			.attr('width', self.metrics.width)
+			.attr('height', totalHeight);
+		
+		cursor
+			.style('height', (chartHeight + self.metrics.yearHeight) + 'px')
+			.style('top', self.metrics.paddingTop + 'px');
+	
+		d3.select('#plot')
+			.style('width', plotWidth + 'px')
+			.style('top', self.metrics.paddingTop + 'px');
+		
+		// Year labels.
+		timeline.append('g').attr('class', 'axis')
+			.attr('transform', 'translate(0,' + self.metrics.paddingTop + ')')
+			.transition()
+			.call(
+				d3.svg.axis()
+					.scale(yearScale)
+					.orient('top')
+					.ticks(d3.time.year.utc, 1)
+					.tickSize(-(chartHeight + self.metrics.yearHeight), 0)
+					.tickFormat(function (yearDate) {
+						// Only show the year if there's enough room
+						if (plotWidth - yearScale(yearDate) < 45)
+							return '';
+						return yearDate.getUTCFullYear();
+					})
+			);
+	}
 
 	var line = d3.svg.line()
 		.x(function (plays) { return yearScale(plays[0]); })
-		.y(function (plays) { return -metrics.plotScale * plays[1]; })
+		.y(function (plays) { return -self.metrics.plotScale * plays[1]; })
 		.interpolate('basis');
 	
 	self.drawArtists = function (artists) {	
@@ -277,29 +302,27 @@ function Timescape(startDate, endDate, metrics) {
 			
 		// Add new rows.
 		var addedRows = rows.enter().append('g').attr('class', 'artist').call(fadeOut);
-		
+		/*
 		addedRows
 			.append('rect')
 			.attr('x', function (artist) { return yearScale(artist.firstPeakWeek) - 7.5; })
 			.attr('y', -7.5)
 			.attr('width', 15)
 			.attr('height', 15)
-			.attr('fill', 'yellow')
+			.attr('fill', 'yellow')*/
 		
 		// Add artist plots.
-		addedRows
-			.append('path')
+		addedRows.append('path')
 			.attr('fill', function (artist, artistNumber) {
 				return 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)';
 			})
 			.attr('d', function (artist) { return line(artist.points); });
 				
 		// The artist text.
-		addedRows
-			.append('text')
+		addedRows.append('text')
 			.attr('x', plotWidth)
 			.text(function (artist) { return artist.name; }); // To-do: Add a now playing indicator?
-		
+			
 		// Move updated rows to their correct position and opacity.
 		rows.order();
 		delay(0).then(function () { fadeIn(rows); });
@@ -309,21 +332,29 @@ function Timescape(startDate, endDate, metrics) {
 		rows
 			.style('opacity', 0)
 			.style('transform', function (artist, artistNumber) {
-				var position = metrics.paddingTop + metrics.rowHeight * artistNumber;
-				//var t = 0.95;
-				var t = 1 // To-do: no fancy animation seems to looks better
+				var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
 				// To-do: transform transition and then opacity transition
-				return 'translate(0, ' + ((1-t)*totalHeight + t*position) + 'px)';
+				return 'translate(0, ' + position + 'px)';
 			})
 	}
 	function fadeIn(rows) {
 		rows
 			.style('opacity', function (artist, artistNumber) { return artist.relevance; })
 			.style('transform', function (artist, artistNumber) {
-				var position = metrics.paddingTop + metrics.rowHeight * artistNumber;
+				var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
 				return 'translate(0, ' + position + 'px)';
 			})
 	}
+		
+	self.drawCursor = function (date, state, shouldTransition) {
+		cursor
+			.classed('playing', !!date)
+			.classed('loading', state === 'loading')
+			.classed('seeking', state === 'seeking');
+		if (date)
+			(shouldTransition ? cursor.transition().duration(200) : cursor)
+				.style('left', yearScale(date) + 'px');
+	};
 	
 	function mouseToDate(container) {
 		var x = d3.mouse(container)[0];
@@ -337,8 +368,6 @@ function Timescape(startDate, endDate, metrics) {
 	self.onDateSeek = function (date) {};
 	self.onDateSelect = function (date) {};
 	d3.select('#plot')
-		.style('width', plotWidth + 'px')
-		.style('top', (metrics.paddingTop - metrics.yearHeight) + 'px')
 		.on('mousemove', function () {
 			//self.onDateSeek(mouseToDate(this));
 		})
@@ -361,20 +390,6 @@ function Timescape(startDate, endDate, metrics) {
 		.on('click', function () {
 			d3.event.stopPropagation();
 		});
-	
-	var cursor = d3
-		.select('#cursor')
-		.style('height', (chartHeight + metrics.yearHeight) + 'px')
-		.style('top', (metrics.paddingTop - metrics.yearHeight) + 'px');
-	self.drawCursor = function (date, state, shouldTransition) {
-		cursor
-			.classed('playing', !!date)
-			.classed('loading', state === 'loading')
-			.classed('seeking', state === 'seeking');
-		if (date)
-			(shouldTransition ? cursor.transition().duration(200) : cursor)
-				.style('left', yearScale(date) + 'px');
-	};
 }
 
 function draw(data) {
@@ -388,24 +403,34 @@ function draw(data) {
 	var startDate = weeks[0].from;
 	var endDate = weeks[weeks.length - 1].to;
 	
-	// The state.
+	// Render the timescape.
+	var timescape = new Timescape(startDate, endDate);	
+	
+	// State.
 	var currentWeek = false;
 	var currentCursorState = false;
 	var currentArtists = augmentArtists(chooseArtists());
-	
-	var timescape = new Timescape(startDate, endDate, {
-		artistWidth: 150,
-		paddingTop: 100,
-		width: d3.select('body').node().getBoundingClientRect().width * 0.9, // To-do: rescale on resize
-		yearHeight: 30,
-		rowHeight: 17,
-		rows: currentArtists.length,
+	renderAll();
+	function renderAll() {
+		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('form').clientHeight);
+		timescape.metrics.width = 0.9 * window.innerWidth;
+		timescape.metrics.rows = Math.floor((usableHeight - timescape.metrics.paddingTop) / timescape.metrics.rowHeight);
 		
 		// I want 10% of the peaks to be over 120 pixels tall.
-		plotScale: 120 / d3.quantile(currentArtists.map(function (a) { return a.maxPlays; }).sort(d3.ascending), 0.9)
-	});
-	timescape.drawCursor();
-	timescape.drawArtists(currentArtists);
+		timescape.metrics.plotScale = 120 / d3.quantile(currentArtists.map(function (a) { return a.maxPlays; }).sort(d3.ascending), 0.9);
+		
+		currentArtists = augmentArtists(chooseArtists());
+		timescape.init();
+		timescape.drawAxes();
+		timescape.drawCursor(currentWeek, currentCursorState);
+		timescape.drawArtists(currentArtists);
+	}
+	
+	var resizeTimeout = false;
+	window.onresize = function () {
+		clearTimeout(resizeTimeout);
+		resizeTimeout = setTimeout(renderAll, 750);
+	};
 	
 	var loader = new WeeklyTrackLoader(user);
 	var player = new Player();
@@ -509,11 +534,12 @@ function draw(data) {
 		
 		// To-do: choose to show artists based on e.g. what's currently playing
 			//.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
-		return selection.slice(0, 35);
+		return selection;
 	}
 	
 	// Calculate some extra values needed for rendering the artist.
 	function augmentArtists(artists) {
+		artists = artists.slice(0, timescape.metrics.rows);
 	
 		// Highlight the ones with the most plays this week.
 		if (currentWeek)
