@@ -6,6 +6,8 @@ To-do:
  - Variable play time
  - Investigate audio stoppage
  - Improve update animation: transform, then opacity
+ - Improve relevance-to-opacity translation
+ - Fade cursor in and out
  - Improve UI
  - Write readme and release!
 */
@@ -426,7 +428,7 @@ function draw(data) {
 		
 		timescape.init();
 		timescape.drawAxes();
-		timescape.drawCursor((currentWeek.from + currentWeek.to) / 2, currentCursorState);
+		timescape.drawCursor(currentWeek && (currentWeek.from + currentWeek.to) / 2, currentCursorState);
 		timescape.drawArtists(chooseArtists());
 	}
 	
