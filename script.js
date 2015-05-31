@@ -393,7 +393,7 @@ function Timescape(startDate, endDate) {
 					self.onDateSelect(mouseToDate(this));
 				})
 		);
-	d3.select('#container')
+	d3.select('#plot')
 		.on('click', function () {
 			d3.event.stopPropagation();
 		});
