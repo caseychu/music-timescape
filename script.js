@@ -6,7 +6,6 @@ To-do:
  - Variable play time
  - Investigate audio stoppage
  - Improve update animation: transform, then opacity
- - URL hash-based loading
  - Improve UI
  - Write readme and release!
 */
@@ -229,11 +228,14 @@ function Timescape(startDate, endDate) {
 	var self = this;
 	var timeline = d3.select('#timeline');
 	var cursor = d3.select('#cursor');
+	var container = d3.select('#container');
 	var chartHeight, plotWidth, totalHeight, yearScale;
 	
 	self.init = function () {
 		timeline.selectAll('g.axis').remove();
 		timeline.selectAll('g.artist').remove();
+		container.style('display', '');
+		cursor.transition().duration(1000).style('opacity', 1);
 		
 		chartHeight = self.metrics.rows * self.metrics.rowHeight;
 		plotWidth = self.metrics.width - self.metrics.artistWidth;
@@ -243,6 +245,10 @@ function Timescape(startDate, endDate) {
 			.range([0, plotWidth]);
 	};
 	
+	self.hide = function () {
+		container.style('display', 'none');
+		cursor.style('opacity', 0);
+	};
 	self.metrics = {
 		artistWidth: 150,
 		paddingTop: 70,
@@ -314,7 +320,7 @@ function Timescape(startDate, endDate) {
 		// Add artist plots.
 		addedRows.append('path')
 			.attr('fill', function (artist, artistNumber) {
-				return 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)';
+				return artist.color || (artist.color = 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)');
 			})
 			.attr('d', function (artist) { return line(artist.points); });
 				
@@ -420,14 +426,15 @@ function draw(data) {
 		
 		timescape.init();
 		timescape.drawAxes();
-		timescape.drawCursor(currentWeek, currentCursorState);
+		timescape.drawCursor((currentWeek.from + currentWeek.to) / 2, currentCursorState);
 		timescape.drawArtists(chooseArtists());
 	}
 	
 	var resizeTimeout = false;
 	window.onresize = function () {
+		timescape.hide();
 		clearTimeout(resizeTimeout);
-		resizeTimeout = setTimeout(renderAll, 750);
+		resizeTimeout = setTimeout(renderAll, 400);
 	};
 	
 	var loader = new WeeklyTrackLoader(user);
