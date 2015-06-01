@@ -1,12 +1,12 @@
 /*
 To-do:
- - Better song choices
  - Better sorting order
  - Speed of filtering and sorting
  - Variable play time
  - Investigate audio stoppage
  - Improve update animation: transform, then opacity
  - Improve relevance-to-opacity translation
+ - Implement maximum size?
  - Improve UI
  - Write readme and release!
 */
@@ -167,7 +167,7 @@ function processData(data) {
 		week.totalPlays = d3.sum(week.artists.map(function (artist) { return +artist['playcount']; }));
 		week.maxPlays = d3.max(week.artists.map(function (artist) { return +artist['playcount']; })); 
 		
-		week.artists.forEach(function (artist, rank) {
+		week.artists = week.artists.map(function (artist, rank) {
 			var key = artist['name'].replace('œ', 'oe') //+ artist['mbid'];
 			// Create a new entry for this artist if it doesn't exist.
 			if (!artists[key]) {
@@ -200,6 +200,8 @@ function processData(data) {
 			artists[key].playFrequency += plays / (Date.now() - artists[key].startWeek);
 			if (rank < artists[key].topRank)
 				artists[key].topRank = rank;
+				
+			return artists[key];
 		});
 	});
 	
@@ -410,12 +412,63 @@ function draw(data) {
 	var startDate = weeks[0].from;
 	var endDate = weeks[weeks.length - 1].to;
 	
-	// Render the timescape.
 	var timescape = new Timescape(startDate, endDate);	
+	var loader = new WeeklyTrackLoader(user);
+	var player = new Player();
 	
-	// State.
+	// Handle week selections.
 	var currentWeek = false;
 	var currentCursorState = false;
+	document.body.onclick = function () {
+		loader.stop();
+		player.stop();
+		selectWeek();
+	};
+	timescape.onDateSeek = function (date) {
+		selectWeek(dateToWeek(date), 'seeking');
+	};
+	timescape.onDateSelect = function (date) {	
+		loader.stop();
+		player.stop(); // This causes a layout update, even though one is coming up four lines later :/
+		recentlyChosen = [];
+		
+		var week = dateToWeek(date);
+		selectWeek(week, 'loading');
+		loader.load(week);
+	};
+	player.onStateChange = function (info) {
+		if (currentCursorState !== 'seeking')
+			selectWeek(info && info.week);
+	};
+	function selectWeek(week, state) {
+		if (week !== currentWeek || state !== currentCursorState) {
+			currentWeek = week;
+			currentCursorState = state;
+			
+			timescape.drawCursor(week && (week.from + week.to) / 2, state, !state);
+			timescape.drawArtists(chooseArtists());
+		}
+	}
+	function dateToWeek(date) {
+		// Find the closest week to the one clicked.
+		var week = weeks[0];
+		while (week && week.to <= +date)
+			week = week.next;
+		return week || weeks[weeks.length - 1];
+	}
+		
+	// Handle loading tracks.
+	loader.chooseTracks = chooseTracks;
+	loader.onTrackLoaded = function (track) {
+		var playDuration = 5000 + 7000 * Math.max(0, track.importance);
+		player.push(track.spotify['preview_url'], playDuration, track);
+	};
+	loader.shouldContinue = function () {
+		// Throttle downloads once we get enough.
+		return player.getQueueLength() < 9;
+	};
+	
+	// Ready to render!
 	renderAll();
 	function renderAll() {
 		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('form').clientHeight);
@@ -431,6 +484,7 @@ function draw(data) {
 		timescape.drawArtists(chooseArtists());
 	}
 	
+	// Rerender on resize.
 	var resizeTimeout = false;
 	window.onresize = function () {
 		timescape.hide();
@@ -438,83 +492,7 @@ function draw(data) {
 		resizeTimeout = setTimeout(renderAll, 400);
 	};
 	
-	var loader = new WeeklyTrackLoader(user);
-	var player = new Player();
-	var recentlyChosen = [];
-	loader.onTrackLoaded = function (track) {
-		player.push(track.spotify['preview_url'], track);
-	};
-	loader.chooseTracks = function (tracks) {
-		// To-do: It's annoying when it prematurely exhausts an artist before its peak
-	
-		// Avoid songs that have been played.
-		var choices = tracks.filter(function (track) {
-			return recentlyChosen.indexOf(track.trackName) === -1;
-		});
-		
-		// Take three songs.
-		choices = choices.slice(0, 3);
-		
-		recentlyChosen = recentlyChosen.concat(choices.map(function (track) { return track.trackName; })).slice(-24);
-		return d3.shuffle(choices);
-	};
-	loader.shouldContinue = function () {
-		// Throttle downloads once we get enough.
-		return player.getQueueLength() < 9;
-	};
-	
-	// To-do: Play a variable amount of the song depending on how many plays it got.
-	
-	function selectWeek(week, state) {
-		if (week !== currentWeek || state !== currentCursorState) {
-			currentWeek = week;
-			currentCursorState = state;
-			
-			timescape.drawCursor(week && (week.from + week.to) / 2, state, !state);
-			timescape.drawArtists(chooseArtists());
-		}
-	}
-	
-	document.body.onclick = function () {
-		loader.stop();
-		player.stop();
-		selectWeek();
-	};
-	
-	function dateToWeek(date) {
-		// Find the closest week to the one clicked.
-		var week = weeks[0];
-		while (week && week.to <= +date)
-			week = week.next;
-		return week || weeks[weeks.length - 1];
-	}
-	
-	timescape.onDateSeek = function (date) {
-		selectWeek(dateToWeek(date), 'seeking');
-	};	
-	
-	timescape.onDateSelect = function (date) {	
-		loader.stop();
-		player.stop(); // This causes a layout update, even though one is coming up four lines later :/
-		recentlyChosen = [];
-		
-		var week = dateToWeek(date);
-		selectWeek(week, 'loading');
-		loader.load(week);
-	};
-	
-	player.onStateChange = function (info) {
-		if (currentCursorState !== 'seeking')
-			selectWeek(info && info.week);
-		if (info)
-			console.log('Now playing', new Date(info.week.from).toString());
-		//console.log(info ? info.trackName + ' - ' + info.artist : '');
-	};
-	
-	function normal(x, s) {
-		return Math.exp(-Math.abs(x) / s) / 2;
-	}
-	
+	// Chooses which artists to play.
 	function chooseArtists() {
 		var selection = artists.slice();
 		if (currentWeek) {
@@ -562,10 +540,6 @@ function draw(data) {
 				while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
 					points.shift();
 				
-				var weights = artist.points.map(function (pt) {
-					return pt * pt / artist.totalPlays;
-				})
-				
 				// Find the first week with above-average number of plays.
 				var averagePlays = d3.mean(d3.values(artist.plays));
 				artist.firstPeakWeek = d3.min(
@@ -576,6 +550,72 @@ function draw(data) {
 		});
 		
 		return selection.sort(function (a1, a2) { return -(a1.firstPeakWeek - a2.firstPeakWeek); });
+	}	
+	function normal(x, s) {
+		return Math.exp(-Math.abs(x) / s) / 2;
+	}
+	
+	// Chooses which tracks to play.
+	var recentTracks = [];
+	function chooseTracks(tracks) {
+		// Calculate the number of times each artist was played this week.
+		var artistPlays = {};
+		for (var i = 0; i < tracks.length; i++) {
+			var track = tracks[i];
+			if (!artistPlays[track.artist])
+				artistPlays[track.artist] = 0;
+			artistPlays[track.artist] += track.plays;
+		}
+		
+		// Filter songs that have already been played (we only need 4, so stop at 4).
+		var chosen = [];
+		for (var i = 0; i < tracks.length && chosen.length < 4; i++) {
+			var track = tracks[i];
+			if (recentTracks.every(function (playedTrack) { return track.trackName !== playedTrack.trackName; }))
+				chosen.push(track);
+		}
+		
+		// We will choose a song if its play count or artist play count falls in a certain range of play counts.
+		// The range is determined by the min and max play counts out of the previous 6 chosen tracks. We always
+		// want to include the top song of the current week, so we always extend the range to include the top song
+		// this week. If this is the first week we're choosing tracks for, instead use the top three tracks to
+		// determine the range. Finally, scale the interval [min, max] to [0, 1], and call the value "importance."
+		var domain = recentTracks.length >= 3 ? recentTracks.slice(-6).concat(chosen.slice(0, 1)) : chosen.slice(0, 2);
+		var artistImportanceScale = getImportanceScale(domain, function (track) { return (track.artistPlays || artistPlays[track.artist]); });
+		var importanceScale = getImportanceScale(domain, function (track) { return track.plays; });
+		
+		console.log(importanceScale.domain(), artistImportanceScale.domain())
+		
+		chosen = chosen.filter(function (track) {
+			track.artistPlays = artistPlays[track.artist];
+			track.artistImportance = artistImportanceScale(track.artistPlays);
+			track.importance = importanceScale(track.plays);
+			
+			// Choose the songs that fall within the interval.
+			if (track.importance >= 0 || track.artistImportance >= 0) {
+				console.log(track.trackName + ' - ' + track.artist + ' (' + [Math.floor(10000 * track.importance), Math.floor(10000 * track.artistImportance)] + ') '
+					+ '  ' + track.plays + ' plays, ' + track.artistPlays + ' artist plays'
+				)
+				return true;
+			}
+			
+			console.log('passed over', track.trackName + ' - ' + track.artist + ' (' + [Math.floor(10000 * track.importance), Math.floor(10000 * track.artistImportance)] + ') '
+				+ '  ' + track.plays + ' plays, ' + track.artistPlays + ' artist plays')
+			return false;
+		});
+		
+		recentTracks = recentTracks.concat(chosen).slice(-24);
+		
+		// Reverse order so we save the best for last!
+		return tracks.reverse();
+		
+		// To-do: It's annoying when it prematurely exhausts an artist before its peak
+	};
+	function getImportanceScale(domain, accessor) {
+		var extent = d3.extent(domain, accessor);
+		if (extent[0] === extent[1])
+			extent[1] += 1; // Edge case, when the range has zero width
+		return d3.scale.linear().domain(extent);
 	}
 }
 
@@ -616,7 +656,7 @@ function WeeklyTrackLoader(user) {
 		})
 		.then(interrupt)
 		.then(function (chart) {
-			if (!chart['weeklytrackchart']['track'])
+			if (!chart || !chart['weeklytrackchart']['track'])
 				return;
 					
 			var promise = Promise.resolve();
@@ -654,7 +694,6 @@ function WeeklyTrackLoader(user) {
 		})
 		.catch(function () {})
 		.then(function () {
-			console.log('Done loading: ', new Date(week.from).toString())
 			return self.load(week.next, currentInterrupt);
 		});
 	}
@@ -668,7 +707,7 @@ function Interrupt() {
 			return value;
 		else
 			return new Promise(function (resolve) {
-				blocked.push(resolve);
+				blocked.push(function () { resolve(value); });
 			});
 	};
 	interrupt.running = true;
@@ -725,11 +764,15 @@ function Player() {
 			fade(current, 1, 0, stopDuration).then(current.pause.bind(current));
 		current = false;
 	};
-	self.push = function (src, info) {
+	self.push = function (src, playDuration, info) {
 		var audio = new Audio();
-		audio.ontimeupdate = function () {		
+		audio.ontimeupdate = function () {
 			// To do: what if the audio pauses automatically to buffer?
-			if (audio.ended || audio.currentTime + 2*stopDuration/1000 > audio.duration || (audio.currentTime > 5 && queue.length)) {
+			if (
+				audio.ended || 
+				(audio.currentTime > audio.duration - 2 * stopDuration / 1000) || 
+				(audio.currentTime > audio.playDuration / 1000 && queue.length)
+			) {
 				audio.ontimeupdate = null;
 				self.next();
 				self.play();
@@ -738,6 +781,7 @@ function Player() {
 		// audio.onerror = function () {} // How to deal with errors?
 		audio.preload = 'auto';
 		audio.src = src;
+		audio.playDuration = playDuration || 5000;
 		audio.info = info;
 		queue.push(audio);
 		

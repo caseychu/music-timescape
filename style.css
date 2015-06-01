@@ -45,5 +45,6 @@ input, button {
 	border-right: 1px dotted #333;
 }
 #cursor.loading {
+	/* To-do: blink */
 	border-right: 1px solid #333;
 }
