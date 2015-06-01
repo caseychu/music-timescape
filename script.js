@@ -346,7 +346,7 @@ function Timescape(startDate, endDate) {
 	}
 	function fadeIn(rows) {
 		rows
-			.style('opacity', function (artist, artistNumber) { return artist.relevance; })
+			.style('opacity', function (artist, artistNumber) { return Math.min(1, artist.relevance); })
 			.style('transform', function (artist, artistNumber) {
 				var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
 				return 'translate(0, ' + position + 'px)';
@@ -501,7 +501,7 @@ function draw(data) {
 					artist.score += artist.plays[week] * (
 						4 * (d === 0 ? 1 + artist.plays[week] / currentWeek.totalPlays : 0) +
 						5 * normal(d, 28 * day) +
-						1 * normal(d, 365 * day)
+						0.1 * normal(d, 365 * day)
 						/*+
 						(1 / 30) * 1*/
 					);
@@ -519,11 +519,11 @@ function draw(data) {
 		// Calculate some extra values needed for rendering the artist.
 		// Highlight the ones with the most plays this week.
 		if (currentWeek)
-			var relevanceScale = d3.scale.linear().domain(currentWeek.extent).range([0.5, 1]);
+			var relevanceScale = d3.scale.linear().domain(currentWeek.extent).range([0.6, 1.2]);
 		
 		selection.forEach(function (artist) {
 			// To-do: this line makes it hard to memoize
-			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from]) || 0.1 : 1;
+			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from]) || 0.15 : 1;
 			
 			// Calculate a time series for this artist. (We only need to do this once.)
 			if (!artist.points) {
@@ -568,37 +568,41 @@ function draw(data) {
 		var chosen = [];
 		for (var i = 0; i < tracks.length && chosen.length < 4; i++) {
 			var track = tracks[i];
-			if (recentTracks.every(function (playedTrack) { return track.trackName !== playedTrack.trackName; }))
+			if (recentTracks.every(function (playedTrack) { return track.trackName !== playedTrack.trackName; })) {
 				chosen.push(track);
+				
+				// While we're at it...
+				track.artistPlays = artistPlays[track.artist];
+			}
 		}
+		
+		
+		chosen.sort(function (t1, t2) {
+			return d3.descending(t1.artistPlays, t2.artistPlays) || d3.descending(t1.plays, t2.plays);
+		});
 		
 		// We will choose a song if its play count or artist play count falls in a certain range of play counts.
 		// The range is determined by the min and max play counts out of the previous 6 chosen tracks. We always
 		// want to include the top song of the current week, so we always extend the range to include the top song
 		// this week. If this is the first week we're choosing tracks for, instead use the top three tracks to
 		// determine the range. Finally, scale the interval [min, max] to [0, 1], and call the value "importance."
+		// I'm not extremely happy with the algorithm, but it gets the job done.
 		var domain = recentTracks.length >= 3 ? recentTracks.slice(-6).concat(chosen.slice(0, 1)) : chosen.slice(0, 2);
-		var artistImportanceScale = getImportanceScale(domain, function (track) { return (track.artistPlays || artistPlays[track.artist]); });
+		var artistImportanceScale = getImportanceScale(domain, function (track) { return track.artistPlays; });
 		var importanceScale = getImportanceScale(domain, function (track) { return track.plays; });
 		
-		console.log(importanceScale.domain(), artistImportanceScale.domain())
+		//console.log(importanceScale.domain(), artistImportanceScale.domain())
 		
 		chosen = chosen.filter(function (track) {
-			track.artistPlays = artistPlays[track.artist];
 			track.artistImportance = artistImportanceScale(track.artistPlays);
 			track.importance = importanceScale(track.plays);
 			
-			// Choose the songs that fall within the interval.
-			if (track.importance >= 0 || track.artistImportance >= 0) {
-				console.log(track.trackName + ' - ' + track.artist + ' (' + [Math.floor(10000 * track.importance), Math.floor(10000 * track.artistImportance)] + ') '
+			console.log(track.trackName + ' - ' + track.artist + ' (' + [Math.floor(10000 * track.importance), Math.floor(10000 * track.artistImportance)] + ') '
 					+ '  ' + track.plays + ' plays, ' + track.artistPlays + ' artist plays'
 				)
-				return true;
-			}
-			
-			console.log('passed over', track.trackName + ' - ' + track.artist + ' (' + [Math.floor(10000 * track.importance), Math.floor(10000 * track.artistImportance)] + ') '
-				+ '  ' + track.plays + ' plays, ' + track.artistPlays + ' artist plays')
-			return false;
+				
+			// Choose the songs that fall within the interval. This app is about artists, so ignore all but the REALLY frequently played songs!
+			return track.importance >= 0.5 || track.artistImportance >= 0;
 		});
 		
 		recentTracks = recentTracks.concat(chosen).slice(-24);
@@ -656,6 +660,10 @@ function WeeklyTrackLoader(user) {
 		.then(function (chart) {
 			if (!chart || !chart['weeklytrackchart']['track'])
 				return;
+				
+			// If only Last.fm had a sensible API...
+			if (!(chart['weeklytrackchart']['track'] instanceof Array))
+				chart['weeklytrackchart']['track'] = [chart['weeklytrackchart']['track']];
 					
 			var promise = Promise.resolve();
 			self.chooseTracks(
