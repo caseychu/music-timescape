@@ -2,10 +2,12 @@
 To-do:
  - Better sorting order
  - Speed of filtering and sorting
- - Investigate audio stoppage
- - Investigate audio-queue-not-cleared bug
  - Implement maximum size?
+ - Now playing indicator
+ 
  - Improve UI
+ - Interrupt loading when choosing a different user
+ - Better cleanup of Timescape
  - Write readme and release!
 */
 
@@ -32,7 +34,7 @@ var lastfm = (function () {
 				else
 					resolve(data);
 			};
-			setTimeout(reject, 8000);
+			//setTimeout(reject, 8000);
 			
 			// Make the request.
 			var script = document.createElement('script');
@@ -473,7 +475,7 @@ function draw(data) {
 	loader.chooseTracks = chooseTracks;
 	loader.onTrackLoaded = function (track) {
 		var playDuration = 5000 + 7000 * Math.max(0, track.importance);
-		player.push(track.spotify['preview_url'], playDuration, track);
+		return player.push(track.spotify['preview_url'], playDuration, track);
 	};
 	loader.shouldContinue = function () {
 		// Throttle downloads once we get enough.
@@ -597,10 +599,10 @@ function draw(data) {
 			track.artistImportance = artistImportanceScale(track.artistPlays);
 			track.importance = importanceScale(track.plays);
 			
-			console.log(track.trackName + ' - ' + track.artist + ' (' + [Math.floor(10000 * track.importance), Math.floor(10000 * track.artistImportance)] + ') '
+			/*console.log(track.trackName + ' - ' + track.artist + ' (' + [Math.floor(10000 * track.importance), Math.floor(10000 * track.artistImportance)] + ') '
 					+ '  ' + track.plays + ' plays, ' + track.artistPlays + ' artist plays'
 				)
-				
+			*/	
 			// Choose the songs that fall within the interval. This app is about artists, so ignore all but the REALLY frequently played songs!
 			return track.importance >= 0.5 || track.artistImportance >= 0;
 		});
@@ -728,6 +730,32 @@ function Interrupt() {
 	return interrupt;
 }
 
+// Okay, okay, this is very very silly. Browsers throttle setTimeout
+// when the tab is inactive. This makes fading audio in and out very
+// choppy when the tab is inactive... this is a silly workaround using
+// the Web Audio API which isn't throttled -- for this exact reason.
+// By the way, we can't use the Web Audio API to *play* the audio because
+// of cross-domain restrictions.
+var setTimeout2 = (function () {
+	var fns = [];
+	var context = new AudioContext();
+	var source = context.createBufferSource();
+	var node = context.createScriptProcessor(2048, 1, 1);
+	node.onaudioprocess = function (e) {
+		fns = fns.filter(function (fn) {
+			return !fn(Date.now() - fn.t);
+		});
+	};
+	source.connect(node);
+	node.connect(context.destination);
+	window.do_not_garbage_collect = [context, source, node];
+		
+	return function (fn) {
+		fn.t = Date.now();
+		fns.push(fn);
+	};
+}());
+
 function Player() {
 	var self = this;
 	var stopDuration = 500;
@@ -737,70 +765,103 @@ function Player() {
 	function fade(audio, from, to, duration) {
 		return new Promise(function (resolve) {
 			var scale = d3.scale.linear().domain([0, duration]).range([from, to]).clamp(true);
-			var t = Date.now();
-			(function step() {
-				var dt = Date.now() - t;
-				audio.volume = scale(dt);
-				if (dt > duration)
+			setTimeout2(function (t) {
+				audio.volume = scale(t);
+				if (t > duration) {
 					resolve();
-				else
-					setTimeout(step, 60);
-			}());
+					return true;
+				}
+			});
 		});
 	}
 	
 	var current = false;
 	var queue = [];
-	self.play = function () {
-		if (current) {
-			// To do: start fade-in only when the audio has started
-			fade(current, 0, 1, startDuration);
-			current.play();
-		}
-	};
 	self.next = function () {
 		if (current)
-			fade(current, 1, 0, stopDuration).then(current.pause.bind(current));
+			current.end();
 		current = queue.shift();
-		self.onStateChange(current && current.info);
+		if (current)
+			current.play();
+		else
+			self.onStateChange();
 	};
 	self.stop = function () {
-		queue = [];
 		if (current)
-			fade(current, 1, 0, stopDuration).then(current.pause.bind(current));
+			current.end();
+		while (queue.length)
+			queue.pop().end();
 		current = false;
 	};
 	self.push = function (src, playDuration, info) {
-		var audio = new Audio();
-		audio.ontimeupdate = function () {
-			// To do: what if the audio pauses automatically to buffer?
-			if (
-				audio.ended || 
-				(audio.currentTime > audio.duration - 2 * stopDuration / 1000) || 
-				(audio.currentTime > audio.playDuration / 1000 && queue.length)
-			) {
-				audio.ontimeupdate = null;
+		playDuration = playDuration || 5000;
+		return new Promise(function (resolve, reject) {
+			var audio = new Audio();
+			var started = false;
+			var ended = false;
+			
+			// Use this function to stop audio, to avoid any race conditions.
+			audio.end = function () {
+				if (ended)
+					return;
+				
+				ended = true;
+				fade(current, 1, 0, stopDuration).then(function () {
+					audio.pause();
+					
+					// Kill download
+					audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAVFYAAFRWAAABAAgAZGF0YQAAAAA=';
+					audio.load();
+				});
+			};
+			
+			audio.volume = 0;
+			audio.onprogress = function () {
+				if (ended)
+					return;
+				
+				var downloaded = audio.buffered.length && audio.buffered.end(audio.buffered.length - 1);
+				console.log(info.trackName, downloaded)	
+				if (downloaded > playDuration / 1000) {
+					resolve();
+				
+					// Here, we would stop downloading if there was an API to :(
+				}
+			};
+			audio.onerror = reject;
+			audio.ontimeupdate = function () {
+				if (ended)
+					return;
+			
+				if (audio.currentTime > 0 && !started) {
+					started = true;
+					fade(current, 0, 1, startDuration);
+					self.onStateChange(info);
+				}
+			
+				if (
+					(audio.currentTime >= audio.duration - 2 * stopDuration / 1000) || 
+					(audio.currentTime >= playDuration / 1000 && queue.length)
+				) {
+					self.next();
+				}
+			};
+			
+			audio.preload = 'auto';
+			audio.src = src;
+			audio.info = info;
+			queue.push(audio);
+		})
+		.then(function () {
+			if (!current)
 				self.next();
-				self.play();
-			}
-		};
-		// audio.onerror = function () {} // How to deal with errors?
-		audio.preload = 'auto';
-		audio.src = src;
-		audio.playDuration = playDuration || 5000;
-		audio.info = info;
-		queue.push(audio);
-		
-		if (!current) {
-			self.next();
-			self.play();
-		}
+		});
 	};
 	self.getQueueLength = function () {
 		return queue.length;
 	};
 	
-	self.onStateChange = function (current, queue) {};
+	self.onStateChange = function (current) {};
 }
 
 
