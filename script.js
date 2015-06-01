@@ -4,7 +4,6 @@ To-do:
  - Speed of filtering and sorting
  - Variable play time
  - Investigate audio stoppage
- - Improve update animation: transform, then opacity
  - Improve relevance-to-opacity translation
  - Implement maximum size?
  - Improve UI
