@@ -9,6 +9,9 @@ To-do:
  - Interrupt loading when choosing a different user
  - Better cleanup of Timescape
  - Write readme and release!
+ 
+ - Increase play duration when tab is not active?
+ - If the player runs out of audio, change back to the loading cursor
 */
 
 function stringify(obj) {
@@ -823,6 +826,7 @@ function Player() {
 				var downloaded = audio.buffered.length && audio.buffered.end(audio.buffered.length - 1);
 				console.log(info.trackName, downloaded)	
 				if (downloaded > playDuration / 1000) {
+					audio.loaded = true;
 					resolve();
 				
 					// Here, we would stop downloading if there was an API to :(
@@ -841,14 +845,23 @@ function Player() {
 			
 				if (
 					(audio.currentTime >= audio.duration - 2 * stopDuration / 1000) || 
-					(audio.currentTime >= playDuration / 1000 && queue.length)
+					(audio.currentTime >= playDuration / 1000 && queue.length && queue[0].loaded)
 				) {
 					self.next();
 				}
 			};
 			
+			// This url fragment (sometimes) stops the browser from downloading the entire audio file.
+			audio.src = src + '#t=0,' + (1 + playDuration / 1000);
 			audio.preload = 'auto';
-			audio.src = src;
+			
+			// This is a hack: the #t=0,10 url fragment automatically pauses 
+			// the audio 10 seconds in. This restarts it...
+			audio.onpause = function () {
+				if (!ended && audio.currentTime !== audio.duration)
+					audio.play();
+			};
+			
 			audio.info = info;
 			queue.push(audio);
 		})
