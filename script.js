@@ -2,9 +2,8 @@
 To-do:
  - Better sorting order
  - Speed of filtering and sorting
- - Variable play time
  - Investigate audio stoppage
- - Improve relevance-to-opacity translation
+ - Investigate audio-queue-not-cleared bug
  - Implement maximum size?
  - Improve UI
  - Write readme and release!
@@ -164,7 +163,7 @@ function processData(data) {
 	var artists = {};
 	weeks.forEach(function (week, weekNumber) {	
 		week.totalPlays = d3.sum(week.artists.map(function (artist) { return +artist['playcount']; }));
-		week.maxPlays = d3.max(week.artists.map(function (artist) { return +artist['playcount']; })); 
+		week.extent = d3.extent(week.artists.map(function (artist) { return +artist['playcount']; })); 
 		
 		week.artists = week.artists.map(function (artist, rank) {
 			var key = artist['name'].replace('œ', 'oe') //+ artist['mbid'];
@@ -411,9 +410,23 @@ function draw(data) {
 	var startDate = weeks[0].from;
 	var endDate = weeks[weeks.length - 1].to;
 	
-	var timescape = new Timescape(startDate, endDate);	
 	var loader = new WeeklyTrackLoader(user);
 	var player = new Player();
+	var timescape = new Timescape(startDate, endDate);	
+	
+	function renderAll() {
+		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('form').clientHeight);
+		timescape.metrics.width = 0.9 * window.innerWidth;
+		timescape.metrics.rows = Math.floor((usableHeight - timescape.metrics.paddingTop) / timescape.metrics.rowHeight);
+		
+		// I want 10% of the peaks to be over 120 pixels tall.
+		timescape.metrics.plotScale = 120 / d3.quantile(chooseArtists().map(function (a) { return a.maxPlays; }).sort(d3.ascending), 0.9);
+		
+		timescape.init();
+		timescape.drawAxes();
+		timescape.drawCursor(currentWeek && (currentWeek.from + currentWeek.to) / 2, currentCursorState);
+		timescape.drawArtists(chooseArtists());
+	}
 	
 	// Handle week selections.
 	var currentWeek = false;
@@ -467,22 +480,6 @@ function draw(data) {
 		return player.getQueueLength() < 9;
 	};
 	
-	// Ready to render!
-	renderAll();
-	function renderAll() {
-		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('form').clientHeight);
-		timescape.metrics.width = 0.9 * window.innerWidth;
-		timescape.metrics.rows = Math.floor((usableHeight - timescape.metrics.paddingTop) / timescape.metrics.rowHeight);
-		
-		// I want 10% of the peaks to be over 120 pixels tall.
-		timescape.metrics.plotScale = 120 / d3.quantile(chooseArtists().map(function (a) { return a.maxPlays; }).sort(d3.ascending), 0.9);
-		
-		timescape.init();
-		timescape.drawAxes();
-		timescape.drawCursor(currentWeek && (currentWeek.from + currentWeek.to) / 2, currentCursorState);
-		timescape.drawArtists(chooseArtists());
-	}
-	
 	// Rerender on resize.
 	var resizeTimeout = false;
 	window.onresize = function () {
@@ -492,7 +489,7 @@ function draw(data) {
 	};
 	
 	// Chooses which artists to play.
-	function chooseArtists() {
+	function chooseArtists() {	
 		var selection = artists.slice();
 		if (currentWeek) {
 			selection.forEach(function (artist) {
@@ -522,10 +519,11 @@ function draw(data) {
 		// Calculate some extra values needed for rendering the artist.
 		// Highlight the ones with the most plays this week.
 		if (currentWeek)
-			var relevanceScale = d3.scale.linear().domain([0, currentWeek.maxPlays]).range([0.2, 1]);
+			var relevanceScale = d3.scale.linear().domain(currentWeek.extent).range([0.5, 1]);
 		
 		selection.forEach(function (artist) {
-			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from] || 0) : 1;
+			// To-do: this line makes it hard to memoize
+			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from]) || 0.1 : 1;
 			
 			// Calculate a time series for this artist. (We only need to do this once.)
 			if (!artist.points) {
@@ -604,9 +602,7 @@ function draw(data) {
 		});
 		
 		recentTracks = recentTracks.concat(chosen).slice(-24);
-		
-		// Reverse order so we save the best for last!
-		return tracks.reverse();
+		return chosen;
 		
 		// To-do: It's annoying when it prematurely exhausts an artist before its peak
 	};
@@ -616,6 +612,9 @@ function draw(data) {
 			extent[1] += 1; // Edge case, when the range has zero width
 		return d3.scale.linear().domain(extent);
 	}
+	
+	// Ready to render!
+	renderAll();
 }
 
 function WeeklyTrackLoader(user) {
