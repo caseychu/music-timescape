@@ -519,11 +519,11 @@ function draw(data) {
 		// Calculate some extra values needed for rendering the artist.
 		// Highlight the ones with the most plays this week.
 		if (currentWeek)
-			var relevanceScale = d3.scale.linear().domain(currentWeek.extent).range([0.6, 1.2]);
+			var relevanceScale = d3.scale.log().clamp(true).domain(currentWeek.extent).range([0.2, 1]);
 		
 		selection.forEach(function (artist) {
 			// To-do: this line makes it hard to memoize
-			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from]) || 0.15 : 1;
+			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from] || 0) : 1;
 			
 			// Calculate a time series for this artist. (We only need to do this once.)
 			if (!artist.points) {
