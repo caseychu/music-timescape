@@ -47,4 +47,14 @@ input, button {
 #cursor.loading {
 	/* To-do: blink */
 	border-right: 1px solid #333;
+	-webkit-animation: loading 500ms ease-in-out infinite alternate;
+    animation: loading 500ms ease-in-out infinite alternate;
+}
+@-webkit-keyframes loading {
+    0% { border-right: 1px solid #333; }
+    100% { border-right: 1px solid rgba(0, 0, 0, 0.2); }
+}
+@keyframes loading {
+    0% { border-right: 1px solid #333; }
+    100% { border-right: 1px solid rgba(0, 0, 0, 0.2); }
 }
