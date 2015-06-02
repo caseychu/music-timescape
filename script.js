@@ -4,8 +4,8 @@ To-do:
  - Improve UI
  - Write readme and release!
  
+ - Interrupt go()
  - chooseArtists is still too slow if there's too much data. Consider using a Web Worker to precompute?
- - Increase play duration when tab is not active?
  - If the player runs out of audio, change back to the loading cursor
  - Bug: sometimes the cursor disappears when transitioning to fullscreen
 */
@@ -895,7 +895,7 @@ function Player() {
 			
 				if (
 					(audio.currentTime >= audio.duration - 2 * stopDuration / 1000) || 
-					(audio.currentTime >= playDuration / 1000 && queue.length && queue[0].loaded)
+					(audio.currentTime >= playDuration / 1000 && queue.length && queue[0].loaded && !document.hidden)
 				) {
 					self.next();
 				}
