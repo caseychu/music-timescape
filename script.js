@@ -178,6 +178,7 @@ function processData(data) {
 					name: artist['name'],
 					url: artist['url'],
 					plays: {},
+					playWeeks: [],
 					
 					// Summary statistics
 					totalPlays: 0,
@@ -191,6 +192,7 @@ function processData(data) {
 			
 			// Update info.
 			var plays = artists[key].plays[week.from] = +artist['playcount'];
+			artists[key].playWeeks.push(week.from);
 			
 			// Update summary statistics.
 			artists[key].totalPlays += plays;
@@ -209,6 +211,11 @@ function processData(data) {
 	});
 	
 	artists = d3.values(artists);
+	
+	// Chop off artists with basically no plays, as an optimization.
+	artists = artists.filter(function (artist) {
+		return artist.totalPlays >= 3;
+	})
 	
 	// Chop off the first 1% of weeks (with data), to remove extreme outliers.
 	var firstPercentileDate = d3.quantile(
@@ -299,7 +306,7 @@ function Timescape(startDate, endDate) {
 			);
 	}
 
-	var line = d3.svg.line()
+	var path = d3.svg.line()
 		.x(function (plays) { return yearScale(plays[0]); })
 		.y(function (plays) { return -self.metrics.plotScale * plays[1]; })
 		.interpolate('basis');
@@ -307,55 +314,59 @@ function Timescape(startDate, endDate) {
 	self.drawArtists = function (artists) {	
 		var rows = timeline.selectAll('g.artist:not(.removed)')
 			.data(artists, function (artist) { return artist.name; });
-			
-		// Remove rows.
-		var toRemove = rows.exit().classed('removed', true).call(fadeOut);
-		delay(750).then(function () { toRemove.remove() });
-			
-		// Add new rows.
-		var addedRows = rows.enter().append('g').attr('class', 'artist').call(fadeOut);
-		/*
-		addedRows
-			.append('rect')
-			.attr('x', function (artist) { return yearScale(artist.firstPeakWeek) - 7.5; })
-			.attr('y', -7.5)
-			.attr('width', 15)
-			.attr('height', 15)
-			.attr('fill', 'yellow')*/
 		
-		// Add artist plots.
-		addedRows.append('path')
-			.attr('fill', function (artist, artistNumber) {
-				return artist.color || (artist.color = 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)');
+		// Remove rows.
+		rows.exit()
+			.classed('removed', true)
+			.call(function (toRemove) {
+				// Wait for the CSS transition to finish, and then make sure the elements are still set to be removed.
+				delay(750).then(function () {
+					toRemove.filter(function () { return this.classList.contains('removed'); }).remove();
+				});
 			})
-			.attr('d', function (artist) { return line(artist.points); });
-				
-		// The artist text.
-		addedRows.append('text')
-			.attr('x', plotWidth)
-			.text(function (artist) { return artist.name; }); // To-do: Add a now playing indicator?
 			
-		// Move updated rows to their correct position and opacity.
-		rows.order();
-		delay(0).then(function () { fadeIn(rows); });
-	}
-
-	function fadeOut(rows) {
-		rows
+		// Add rows.
+		rows.enter()
+			.append(function (artist) {
+				return artist.el || document.createElementNS('http://www.w3.org/2000/svg', 'g');
+			})
+			.classed('artist', true)
+			.classed('removed', false)
 			.style('opacity', 0)
-			.style('transform', function (artist, artistNumber) {
-				var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
-				// To-do: transform transition and then opacity transition
-				return 'translate(0, ' + position + 'px)';
+			.call(setTransform) // Set opacity and transform so it fades in the right spot.
+			.filter(function (artist) { return !artist.el; })
+			.each(function (artist) { artist.el = this; }) // Cache the element.
+			.call(function (addedRows) {
+				// Artist plots.
+				addedRows.append('svg:path')
+					.attr('d', function (artist) { return path(artist.points); })
+					.attr('fill', function (artist, artistNumber) {
+						return 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)';
+					})
+						
+				// The artist text.
+				addedRows.append('svg:text')
+					.attr('x', plotWidth)
+					.text(function (artist) { return artist.name; })
+				
+				// To-do: Add a now playing indicator?
 			})
+			
+		rows.order();
+		
+		// Set every row to their correct position and opacity (after a delay, for the CSS transition to take effect).
+		delay(0).then(function () {
+			rows
+				.style('opacity', function (artist) { return artist.relevance; })
+				.call(setTransform);
+		});
 	}
-	function fadeIn(rows) {
-		rows
-			.style('opacity', function (artist, artistNumber) { return Math.min(1, artist.relevance); })
-			.style('transform', function (artist, artistNumber) {
-				var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
-				return 'translate(0, ' + position + 'px)';
-			})
+	
+	function setTransform(rows) {
+		rows.style('transform', function (artist, artistNumber) {
+			var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
+			return 'translate(0, ' + position + 'px)';
+		});
 	}
 		
 	self.drawCursor = function (date, state, shouldTransition) {
@@ -380,9 +391,6 @@ function Timescape(startDate, endDate) {
 	self.onDateSeek = function (date) {};
 	self.onDateSelect = function (date) {};
 	d3.select('#plot')
-		.on('mousemove', function () {
-			//self.onDateSeek(mouseToDate(this));
-		})
 		.call(
 			d3.behavior.drag()
 				.on('dragstart', function () {
@@ -400,6 +408,7 @@ function Timescape(startDate, endDate) {
 		);
 	d3.select('#plot')
 		.on('click', function () {
+			d3.event.preventDefault();
 			d3.event.stopPropagation();
 		});
 }
@@ -408,8 +417,9 @@ function draw(data) {
 	var artists = data.artists;
 	var weeks = data.weeks;
 	
+	// No data!
 	if (weeks.length === 0)
-		throw new Error('No data!');
+		return;
 	
 	var user = weeks[0].user;
 	var startDate = weeks[0].from;
@@ -430,12 +440,13 @@ function draw(data) {
 		timescape.init();
 		timescape.drawAxes();
 		timescape.drawCursor(currentWeek && (currentWeek.from + currentWeek.to) / 2, currentCursorState);
-		timescape.drawArtists(chooseArtists());
+		timescape.drawArtists(chooseArtists(currentWeek));
 	}
 	
 	// Handle week selections.
 	var currentWeek = false;
 	var currentCursorState = false;
+	var redrawRequest = false;
 	document.body.onclick = function () {
 		loader.stop();
 		player.stop();
@@ -462,8 +473,11 @@ function draw(data) {
 			currentWeek = week;
 			currentCursorState = state;
 			
-			timescape.drawCursor(week && (week.from + week.to) / 2, state, !state);
-			timescape.drawArtists(chooseArtists());
+			cancelAnimationFrame(redrawRequest);
+			redrawRequest = requestAnimationFrame(function () {
+				timescape.drawCursor(currentWeek && (currentWeek.from + currentWeek.to) / 2, state, !state);
+				timescape.drawArtists(chooseArtists(currentWeek));
+			});
 		}
 	}
 	function dateToWeek(date) {
@@ -493,31 +507,39 @@ function draw(data) {
 		resizeTimeout = setTimeout(renderAll, 400);
 	};
 	
+	window.timeit = function () {
+		console.profile('chooseArtists');
+		console.time('chooseArtists');
+		var week = weeks[0];
+		while (week = week.next)
+			chooseArtists(week.next);
+		console.timeEnd('chooseArtists');
+		console.profileEnd('chooseArtists');
+	};
+	
 	// Chooses which artists to play.
-	function chooseArtists() {	
+	function chooseArtists(currentWeek) {
 		var selection = artists.slice();
+		
+		// Pick the most important
 		if (currentWeek) {
-			selection.forEach(function (artist) {
+			selection.forEach(function assignScore(artist) {
 				// To-do: This is really, really slow
-				var day = 24 * 60 * 60 * 1000;
-				artist.score = 0;
-				for (var week in artist.plays) {
+				var score = 4 * (1 + (artist.plays[currentWeek.from] / currentWeek.totalPlays || 0));
+				for (var i = 0; i < artist.playWeeks.length; i++) {
+					var day = 24 * 60 * 60 * 1000;
+					var week = artist.playWeeks[i];
 					var d = week - currentWeek.from;
-					artist.score += artist.plays[week] * (
-						4 * (d === 0 ? 1 + artist.plays[week] / currentWeek.totalPlays : 0) +
-						5 * normal(d, 28 * day) +
-						0.1 * normal(d, 365 * day)
-						/*+
-						(1 / 30) * 1*/
+					score += artist.plays[week] * (
+						5 * normal(d / (28 * day)) +
+						0.5 * normal(d / (365 * day))
 					);
-				}
+				};
+				artist.score = score;
 			});
-			selection.sort(function (a1, a2) { return -(a1.score - a2.score); });
+			selection.sort(function sortByScore(a1, a2) { return -(a1.score - a2.score); });
 		} else
 			selection.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
-		
-		// To-do: choose to show artists based on e.g. what's currently playing
-			//.filter(function (artist) { return artist.maxPlays > 30 || (artist.totalPlays > 300 && artist.maxPlays > 50) || artist.topRank < 2; })
 		
 		selection = selection.slice(0, timescape.metrics.rows);
 	
@@ -526,7 +548,7 @@ function draw(data) {
 		if (currentWeek)
 			var relevanceScale = d3.scale.log().clamp(true).domain(currentWeek.extent).range([0.2, 1]);
 		
-		selection.forEach(function (artist) {
+		selection.forEach(function augmentArtist(artist) {
 			// To-do: this line makes it hard to memoize
 			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from] || 0) : 1;
 			
@@ -543,6 +565,7 @@ function draw(data) {
 					points.shift();
 				
 				// Find the first week with above-average number of plays.
+				// To-do: improve this.
 				var averagePlays = d3.mean(d3.values(artist.plays));
 				artist.firstPeakWeek = d3.min(
 					points.filter(function (point) { return point[1] >= averagePlays; }),
@@ -551,10 +574,11 @@ function draw(data) {
 			}
 		});
 		
-		return selection.sort(function (a1, a2) { return -(a1.firstPeakWeek - a2.firstPeakWeek); });
+		return selection.sort(function sortByDate(a1, a2) { return -(a1.firstPeakWeek - a2.firstPeakWeek); });
 	}	
-	function normal(x, s) {
-		return Math.exp(-Math.abs(x) / s) / 2;
+	
+	function normal(x) {
+		return Math.exp(-Math.abs(x)) / 2;
 	}
 	
 	// Chooses which tracks to play.
@@ -824,7 +848,6 @@ function Player() {
 					return;
 				
 				var downloaded = audio.buffered.length && audio.buffered.end(audio.buffered.length - 1);
-				console.log(info.trackName, downloaded)	
 				if (downloaded > playDuration / 1000) {
 					audio.loaded = true;
 					resolve();
