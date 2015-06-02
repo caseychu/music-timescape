@@ -1,11 +1,7 @@
 /*
 To-do:
- - Implement maximum size?
- 
  - Now playing indicator
  - Improve UI
- - Interrupt loading when choosing a different user
- - Better cleanup of Timescape
  - Write readme and release!
  
  - chooseArtists is still too slow if there's too much data. Consider using a Web Worker to precompute?
@@ -241,6 +237,7 @@ function Timescape(startDate, endDate) {
 	var self = this;
 	var timeline = d3.select('#timeline');
 	var cursor = d3.select('#cursor');
+	var plot = d3.select('#plot');
 	var container = d3.select('#container');
 	var chartHeight, plotWidth, totalHeight, yearScale;
 	
@@ -396,7 +393,7 @@ function Timescape(startDate, endDate) {
 	
 	self.onDateSeek = function (date) {};
 	self.onDateSelect = function (date) {};
-	d3.select('#plot')
+	plot
 		.call(
 			d3.behavior.drag()
 				.on('dragstart', function () {
@@ -411,15 +408,26 @@ function Timescape(startDate, endDate) {
 					d3.event.sourceEvent.stopPropagation();
 					self.onDateSelect(mouseToDate(this));
 				})
-		);
-	d3.select('#plot')
+		)
 		.on('click', function () {
 			d3.event.preventDefault();
 			d3.event.stopPropagation();
 		});
+		
+	self.destroy = function () {
+		timeline.selectAll('g.axis').remove();
+		timeline.selectAll('g.artist').remove();
+		timeline.attr('width', '').attr('height', '');
+		plot.attr('style', '');
+		cursor.attr('style', '');
+		container
+			.attr('style', '')
+			.html(container.html()); // Remove all events.
+	};
 }
 
-function draw(data) {
+function TimescapeController(data) {
+	var self = this;
 	var artists = data.artists;
 	var weeks = data.weeks;
 	
@@ -461,7 +469,7 @@ function draw(data) {
 	timescape.onDateSeek = function (date) {
 		selectWeek(dateToWeek(date), 'seeking');
 	};
-	timescape.onDateSelect = function (date) {	
+	timescape.onDateSelect = function (date) {
 		loader.stop();
 		player.stop();
 		recentlyChosen = [];
@@ -511,6 +519,13 @@ function draw(data) {
 		timescape.hide();
 		clearTimeout(resizeTimeout);
 		resizeTimeout = setTimeout(renderAll, 400);
+	};
+	
+	self.destroy = function () {
+		loader.stop();
+		player.stop();
+		timescape.destroy();
+		window.onresize = null;
 	};
 	
 	// Chooses which artists to play.
@@ -967,8 +982,7 @@ window.onload = function () {
 		return false;
 	};
 	
-	var container = document.querySelector('#container');
-	var svg = document.querySelector('#timeline');
+	var controller;
 	window.onhashchange = function () {
 		var user = window.location.hash.replace(/^#/, '');
 		if (user) {
@@ -976,10 +990,8 @@ window.onload = function () {
 			document.querySelector('#go').disabled = true;
 			load(user).then(function (data) {
 				document.querySelector('#go').disabled = false;
-				
-				container.removeChild(document.querySelector('#timeline'));
-				container.appendChild(svg.cloneNode(true));
-				draw(processData(data));
+				controller && controller.destroy();
+				controller = new TimescapeController(processData(data));
 			}).catch(function () {});
 		}
 	};
