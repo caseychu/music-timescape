@@ -255,6 +255,8 @@ function Timescape(startDate, endDate) {
 		yearScale = d3.time.scale.utc()
 			.domain([startDate, endDate])
 			.range([0, plotWidth]);
+		
+		renderedRows = {};
 	};
 	
 	self.hide = function () {
@@ -309,38 +311,53 @@ function Timescape(startDate, endDate) {
 		.x(function (plays) { return yearScale(plays[0]); })
 		.y(function (plays) { return -self.metrics.plotScale * plays[1]; })
 		.interpolate('basis');
-	
+	var renderedRows = {};
 	self.drawArtists = function (artists) {	
-		var rows = timeline.selectAll('g.artist:not(.removed)')
+		var rows = timeline.selectAll('g.artist')
 			.data(artists, function (artist) { return artist.name; });
 		
 		// Remove rows.
 		rows.exit()
-			.classed('removed', true)
+			.classed('removing', true)
 			.call(function (toRemove) {
 				// Wait for the CSS transition to finish, and then make sure the elements are still set to be removed.
 				delay(750).then(function () {
-					toRemove.filter(function () { return this.classList.contains('removed'); }).remove();
+					toRemove
+						.filter(function () { return this.classList.contains('removing'); })
+						.classed('removing', false)
+						.remove();
 				});
 			})
-			
+		
+		// Transition existing rows.
+		rows
+			.classed('removing', false) // The selection will pick up rows currently being removed, so make sure we undo that.
+			.style('opacity', setOpacity)
+			.style('transform', setTransform);
+		
 		// Add rows.
 		rows.enter()
-			.append(function (artist) {
-				return artist.el || document.createElementNS('http://www.w3.org/2000/svg', 'g');
+			.insert(function (artist, artistNumber) {
+				var el = renderedRows[artist.name] || document.createElementNS('http://www.w3.org/2000/svg', 'g');
+				
+				// Set these properties *before* inserting so that CSS transitions don't occur.
+				el.style.opacity = 0;
+				el.style.transform = setTransform(artist, artistNumber);
+				return el;
 			})
 			.classed('artist', true)
-			.classed('removed', false)
-			.style('opacity', 0)
-			.call(setTransform) // Set opacity and transform so it fades in the right spot.
-			.filter(function (artist) { return !artist.el; })
-			.each(function (artist) { artist.el = this; }) // Cache the element.
+			.each(function () { getComputedStyle(this).opacity; }) // Flush styles so CSS will transition the next line.
+			.style('opacity', setOpacity)
+			
+			// Now work with only newly created rows.
+			.filter(function (artist) { return !(artist.name in renderedRows); })
+			.each(function (artist) { renderedRows[artist.name] = this; }) // Cache the element.
 			.call(function (addedRows) {
 				// Artist plots.
 				addedRows.append('svg:path')
 					.attr('d', function (artist) { return path(artist.points); })
 					.attr('fill', function (artist, artistNumber) {
-						return 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)';
+						return artist.color || (artist.color = 'hsla(' + (Math.floor(artistNumber * 31 % 360)) + ', 100%, 80%, 0.7)');
 					})
 						
 				// The artist text.
@@ -349,23 +366,12 @@ function Timescape(startDate, endDate) {
 					.text(function (artist) { return artist.name; })
 				
 				// To-do: Add a now playing indicator?
-			})
-			
-		rows.order();
-		
-		// Set every row to their correct position and opacity (after a delay, for the CSS transition to take effect).
-		delay(0).then(function () {
-			rows
-				.style('opacity', function (artist) { return artist.relevance; })
-				.call(setTransform);
-		});
+			});
 	}
-	
-	function setTransform(rows) {
-		rows.style('transform', function (artist, artistNumber) {
-			var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
-			return 'translate(0, ' + position + 'px)';
-		});
+	function setOpacity(artist) { return artist.relevance; }
+	function setTransform(artist, artistNumber) {
+		var position = self.metrics.paddingTop + self.metrics.yearHeight + self.metrics.rowHeight * artistNumber;
+		return 'translate(0, ' + position + 'px)';
 	}
 		
 	self.drawCursor = function (date, state, shouldTransition) {
@@ -512,11 +518,9 @@ function draw(data) {
 		if (artistChoices[currentWeek && currentWeek.from])
 			var selection = artistChoices[currentWeek && currentWeek.from];
 		
-		// This part is quite slow; that's why we memoize!
+		// Here's where we pick the most important artists for this week. It's quite slow; that's why we memoize!
 		else {
 			var selection = artists.slice();
-			
-			// Pick the most important
 			if (currentWeek) {
 				selection.forEach(function assignScore(artist) {
 					var score = 4 * (1 + (artist.plays[currentWeek.from] / currentWeek.totalPlays || 0));
@@ -534,8 +538,10 @@ function draw(data) {
 				selection.sort(function sortByScore(a1, a2) { return -(a1.score - a2.score); });
 			} else
 				selection.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
-			selection = artistChoices[currentWeek && currentWeek.from] = selection.slice(0, timescape.metrics.rows);
+			artistChoices[currentWeek && currentWeek.from] = selection;
 		}
+		
+		selection = selection.slice(0, timescape.metrics.rows);
 	
 		if (currentWeek)
 			var relevanceScale = d3.scale.log().clamp(true).domain(currentWeek.extent).range([0.2, 1]);
