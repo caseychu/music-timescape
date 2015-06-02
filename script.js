@@ -73,7 +73,7 @@ Promise.parallel = function (n, arr, progress) {
 					})
 					.then(function (value) {
 						values[index] = value;
-						return progress(++finished, arr.length, started);
+						return progress(++finished / arr.length, finished, arr.length);
 					})
 					.then(work);
 			}
@@ -97,6 +97,22 @@ function delay(ms, value) {
 }
 
 function go(user, progress) {
+	// Use this as a demo. This isn't actually my Last.fm username, so I can still test with my username.
+	if (user === 'bitsofpancake')
+		return new Promise(function (resolve, reject) {
+			var xhr = new XMLHttpRequest();
+			xhr.open('GET', 'demo.json', true);
+			xhr.onprogress = function (e) {
+				if (e.lengthComputable)
+					progress(e.loaded / e.total);
+			};
+			xhr.onload = function () {
+				resolve(JSON.parse(this.responseText));
+			};
+			xhr.onerror = reject;
+			xhr.send();
+		});
+
 	return Promise.all([
 		lastfm({
 			'method': 'user.getinfo',
@@ -117,13 +133,13 @@ function go(user, progress) {
 		return Promise.parallel(
 			5,
 			charts.map(function (chart) {
-				return function () {
+				return function retry() {
 					return lastfm({
 						'method': 'user.getweeklyartistchart',
 						'user': user,
 						'from': chart['from'],
 						'to': chart['to']
-					});
+					})
 				};
 			}),
 			progress
@@ -964,8 +980,8 @@ window.onload = function () {
 			return Promise.reject();
 		
 		var progress = d3.select('header')//.transition();
-		return go(user, function (n, m) {
-			var percentage = n / m * 100 + '%';
+		return go(user, function (p) {
+			var percentage = p * 100 + '%';
 			progress.style('background', 'linear-gradient(90deg, #eee ' + percentage + '%, #f6f6f6 ' + percentage + '%)');
 		}).then(function (data) {
 			try {
@@ -1002,6 +1018,6 @@ window.onload = function () {
 	// Set a default.
 	if (!window.location.hash.replace(/^#/, '')) {
 		document.querySelector('#user').focus();
-		document.querySelector('#user').value = 'obscuresecurity';
+		document.querySelector('#user').value = 'bitsofpancake';
 	}
 };
