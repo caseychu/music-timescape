@@ -1,6 +1,5 @@
 /*
 To-do:
- - Speed of filtering and sorting
  - Implement maximum size?
  
  - Now playing indicator
@@ -9,8 +8,10 @@ To-do:
  - Better cleanup of Timescape
  - Write readme and release!
  
+ - chooseArtists is still too slow if there's too much data. Consider using a Web Worker to precompute?
  - Increase play duration when tab is not active?
  - If the player runs out of audio, change back to the loading cursor
+ - Bug: sometimes the cursor disappears when transitioning to fullscreen
 */
 
 function stringify(obj) {
@@ -527,11 +528,13 @@ function draw(data) {
 					for (var i = 0; i < artist.playWeeks.length; i++) {
 						var day = 24 * 60 * 60 * 1000;
 						var week = artist.playWeeks[i];
-						var d = week - currentWeek.from;
-						score += artist.plays[week] * (
-							5 * normal(d / (28 * day)) +
-							0.5 * normal(d / (365 * day))
-						);
+						var d = week - currentWeek.from;						
+						var coefficient = 5 * normalish(d / (28 * day)) + 0.5 * normalish(d / (365 * day));
+						score += artist.plays[week] * coefficient;
+						
+						// The coefficient will be ~0.004 for d = 4 years, so let's optimize this and stop here...
+						if (d > 4 * 365 * day)
+							break;
 					};
 					artist.score = score;
 				});
@@ -575,11 +578,20 @@ function draw(data) {
 		});
 		
 		return selection.sort(function sortByDate(a1, a2) { return -(a1.firstPeakWeek - a2.firstPeakWeek); });
-	}	
-	
-	function normal(x) {
+	}
+	function normalish(x) {
 		return Math.exp(-Math.abs(x)) / 2;
 	}
+	
+	/*
+	// Can we get away with precomputing everything?
+	(function () {
+		var week = { next: weeks[0] };
+		console.time('chooseArtists');
+		while (week = week.next)
+			chooseArtists(week);
+		console.timeEnd('chooseArtists');
+	}()); */
 	
 	// Chooses which tracks to play.
 	var recentTracks = [];
