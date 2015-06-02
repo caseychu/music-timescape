@@ -437,8 +437,8 @@ function draw(data) {
 	
 	function renderAll() {
 		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('form').clientHeight);
-		timescape.metrics.width = 0.9 * window.innerWidth;
-		timescape.metrics.rows = Math.floor((usableHeight - timescape.metrics.paddingTop) / timescape.metrics.rowHeight);
+		timescape.metrics.width = Math.min(1500, 0.9 * window.innerWidth);
+		timescape.metrics.rows = Math.min(50, Math.floor((usableHeight - timescape.metrics.paddingTop) / timescape.metrics.rowHeight));
 		
 		// I want 10% of the peaks to be over 120 pixels tall.
 		timescape.metrics.plotScale = 120 / d3.quantile(chooseArtists().map(function (a) { return a.maxPlays; }).sort(d3.ascending), 0.9);
