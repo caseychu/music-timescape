@@ -5,11 +5,14 @@ html {
 body {
 	margin: 0;
 }
-form {
+header {
 	padding: 1em;
-	text-align: right;
 	font-size:10pt;
 	background-color: #eee;
+	overflow: hidden;
+}
+form {
+	float: right;
 }
 label {
 	padding: 0 3px;

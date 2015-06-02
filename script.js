@@ -1,6 +1,6 @@
 /*
 To-do:
- - Now playing indicator
+ - Play controls
  - Improve UI
  - Write readme and release!
  
@@ -8,6 +8,7 @@ To-do:
  - chooseArtists is still too slow if there's too much data. Consider using a Web Worker to precompute?
  - If the player runs out of audio, change back to the loading cursor
  - Bug: sometimes the cursor disappears when transitioning to fullscreen
+ - Handle last.fm errors better?
 */
 
 function stringify(obj) {
@@ -444,7 +445,7 @@ function TimescapeController(data) {
 	var timescape = new Timescape(startDate, endDate);	
 	
 	function renderAll() {
-		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('form').clientHeight);
+		var usableHeight = 0.9 * (window.innerHeight - document.querySelector('header').clientHeight);
 		timescape.metrics.width = Math.min(1500, 0.9 * window.innerWidth);
 		timescape.metrics.rows = Math.min(50, Math.floor((usableHeight - timescape.metrics.paddingTop) / timescape.metrics.rowHeight));
 		
@@ -962,7 +963,7 @@ window.onload = function () {
 		if (localOnly)
 			return Promise.reject();
 		
-		var progress = d3.select('form')//.transition();
+		var progress = d3.select('header')//.transition();
 		return go(user, function (n, m) {
 			var percentage = n / m * 100 + '%';
 			progress.style('background', 'linear-gradient(90deg, #eee ' + percentage + '%, #f6f6f6 ' + percentage + '%)');
