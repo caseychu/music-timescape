@@ -1,10 +1,9 @@
 /*
 To-do:
- - Better sorting order
  - Speed of filtering and sorting
  - Implement maximum size?
- - Now playing indicator
  
+ - Now playing indicator
  - Improve UI
  - Interrupt loading when choosing a different user
  - Better cleanup of Timescape
@@ -171,7 +170,7 @@ function processData(data) {
 		week.extent = d3.extent(week.artists.map(function (artist) { return +artist['playcount']; })); 
 		
 		week.artists = week.artists.map(function (artist, rank) {
-			var key = artist['name'].replace('œ', 'oe') //+ artist['mbid'];
+			var key = artist['name'].replace('œ', 'oe'); // This is to solve a one-off case in my data ;)
 			// Create a new entry for this artist if it doesn't exist.
 			if (!artists[key]) {
 				artists[key] = {
@@ -457,7 +456,7 @@ function draw(data) {
 	};
 	timescape.onDateSelect = function (date) {	
 		loader.stop();
-		player.stop(); // This causes a layout update, even though one is coming up four lines later :/
+		player.stop();
 		recentlyChosen = [];
 		
 		var week = dateToWeek(date);
@@ -507,51 +506,44 @@ function draw(data) {
 		resizeTimeout = setTimeout(renderAll, 400);
 	};
 	
-	window.timeit = function () {
-		console.profile('chooseArtists');
-		console.time('chooseArtists');
-		var week = weeks[0];
-		while (week = week.next)
-			chooseArtists(week.next);
-		console.timeEnd('chooseArtists');
-		console.profileEnd('chooseArtists');
-	};
-	
 	// Chooses which artists to play.
+	var artistChoices = {};
 	function chooseArtists(currentWeek) {
-		var selection = artists.slice();
+		if (artistChoices[currentWeek && currentWeek.from])
+			var selection = artistChoices[currentWeek && currentWeek.from];
 		
-		// Pick the most important
-		if (currentWeek) {
-			selection.forEach(function assignScore(artist) {
-				// To-do: This is really, really slow
-				var score = 4 * (1 + (artist.plays[currentWeek.from] / currentWeek.totalPlays || 0));
-				for (var i = 0; i < artist.playWeeks.length; i++) {
-					var day = 24 * 60 * 60 * 1000;
-					var week = artist.playWeeks[i];
-					var d = week - currentWeek.from;
-					score += artist.plays[week] * (
-						5 * normal(d / (28 * day)) +
-						0.5 * normal(d / (365 * day))
-					);
-				};
-				artist.score = score;
-			});
-			selection.sort(function sortByScore(a1, a2) { return -(a1.score - a2.score); });
-		} else
-			selection.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
-		
-		selection = selection.slice(0, timescape.metrics.rows);
+		// This part is quite slow; that's why we memoize!
+		else {
+			var selection = artists.slice();
+			
+			// Pick the most important
+			if (currentWeek) {
+				selection.forEach(function assignScore(artist) {
+					var score = 4 * (1 + (artist.plays[currentWeek.from] / currentWeek.totalPlays || 0));
+					for (var i = 0; i < artist.playWeeks.length; i++) {
+						var day = 24 * 60 * 60 * 1000;
+						var week = artist.playWeeks[i];
+						var d = week - currentWeek.from;
+						score += artist.plays[week] * (
+							5 * normal(d / (28 * day)) +
+							0.5 * normal(d / (365 * day))
+						);
+					};
+					artist.score = score;
+				});
+				selection.sort(function sortByScore(a1, a2) { return -(a1.score - a2.score); });
+			} else
+				selection.sort(function (a1, a2) { return -(a1.totalPlays - a2.totalPlays); });
+			selection = artistChoices[currentWeek && currentWeek.from] = selection.slice(0, timescape.metrics.rows);
+		}
 	
-		// Calculate some extra values needed for rendering the artist.
-		// Highlight the ones with the most plays this week.
 		if (currentWeek)
 			var relevanceScale = d3.scale.log().clamp(true).domain(currentWeek.extent).range([0.2, 1]);
 		
+		// Add some information needed to render the artist.
 		selection.forEach(function augmentArtist(artist) {
-			// To-do: this line makes it hard to memoize
 			artist.relevance = currentWeek ? relevanceScale(artist.plays[currentWeek.from] || 0) : 1;
-			
+		
 			// Calculate a time series for this artist. (We only need to do this once.)
 			if (!artist.points) {
 				var points = artist.points = weeks.map(function (week) {
@@ -563,9 +555,11 @@ function draw(data) {
 				// Leave just one zero before the first non-zero point.
 				while (points.length >= 2 && points[0][1] === 0 && points[1][1] === 0)
 					points.shift();
-				
-				// Find the first week with above-average number of plays.
-				// To-do: improve this.
+			}
+	
+			// Find the first week with above-average number of plays.
+			// To-do: improve this.
+			if (!artist.firstPeakWeek) {
 				var averagePlays = d3.mean(d3.values(artist.plays));
 				artist.firstPeakWeek = d3.min(
 					points.filter(function (point) { return point[1] >= averagePlays; }),
