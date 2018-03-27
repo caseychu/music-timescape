@@ -1024,8 +1024,8 @@ window.onload = function () {
 		return false;
 	};
 	
-	if (window.hash.location.replace(/^#/, '').indexOf('access_token=') === 0) {
-		localStorage['spotifyaccesstoken'] = hash.slice('access_token='.length).split('&')[0];
+	if (window.location.hash.replace(/^#/, '').indexOf('access_token=') === 0) {
+		localStorage['spotifyaccesstoken'] = window.location.hash.replace(/^#/, '').slice('access_token='.length).split('&')[0];
 		window.location.hash = '';
 	}
 	
