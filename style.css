@@ -11,6 +11,11 @@ header {
 	background-color: #eee;
 	overflow: hidden;
 }
+
+#authorize {
+	display: inline-block;
+	margin-right: 2em;
+}
 form {
 	float: right;
 }

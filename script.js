@@ -17,44 +17,68 @@ function stringify(obj) {
 	}).join('&');
 }
 
+function Throttler(ms) {
+	var self = this;
+	var last = 0;
+	var queue = [];
+	
+	setInterval(function () {
+		if (queue.length)
+			queue.shift()();
+	}, ms);
+	
+	self.wait = function () {
+		return new Promise(function (resolve, reject) {
+			queue.push(resolve);
+		});
+	};
+}
+
 var lastfm = (function () {
 
 	var count = 1;
+	var throttle = new Throttler(200);
 	return function lastfm(obj) {
 		//obj['api_key'] = '1b22e1d1e7f28cd9eb441f258127e5b0';
 		obj['api_key'] = 'b7472d0a7326602639ae462914ad9d2d';
 		obj['format'] = 'json';
 		obj['callback'] = 'lastfmcallback' + count++;
 		
-		return new Promise(function (resolve, reject) {
-			window[obj['callback']] = function (data) {
-				delete window[obj['callback']];
-				if (data['error'])
-					reject(data);
-				else
-					resolve(data);
-			};
-			//setTimeout(reject, 8000);
-			
-			// Make the request.
-			var script = document.createElement('script');
-			script.onerror = reject;
-			script.src = 'http://ws.audioscrobbler.com/2.0/?' + stringify(obj);
-			document.body.appendChild(script);
+		return throttle.wait().then(function () {
+			return new Promise(function (resolve, reject) {
+				window[obj['callback']] = function (data) {
+					delete window[obj['callback']];
+					if (data['error'])
+						reject(data);
+					else
+						resolve(data);
+				};
+				//setTimeout(reject, 8000);
+				
+				// Make the request.
+				var script = document.createElement('script');
+				script.onerror = reject;
+				script.src = 'http://ws.audioscrobbler.com/2.0/?' + stringify(obj);
+				document.body.appendChild(script);
+			})
 		});
 	};
 }());
 
-// Spotify API... currently unauthenticated GET endpoints only.
+// Spotify API.
 var spotify = function (endpoint, params) {
-	return new Promise(function (resolve, reject) {
-		var xhr = new XMLHttpRequest();
-		xhr.open('GET', 'https://api.spotify.com/v1/' + endpoint + '?' + stringify(params), true);
-		xhr.onload = function () {
-			resolve(JSON.parse(this.responseText));
-		};
-		xhr.onerror = reject;
-		xhr.send();
+	var throttle = new Throttler(200);
+	return throttle.wait().then(function () {
+		return new Promise(function (resolve, reject) {
+			var xhr = new XMLHttpRequest();
+			xhr.open('GET', 'https://api.spotify.com/v1/' + endpoint + '?' + stringify(params), true);
+			xhr.setRequestHeader('Authorization', 'Bearer ' + localStorage['spotifyaccesstoken']);
+			xhr.onload = function () {
+				resolve(JSON.parse(this.responseText));
+			};
+			xhr.onerror = reject;
+			xhr.send();
+		});
 	});
 };
 
@@ -527,7 +551,7 @@ function TimescapeController(data) {
 	};
 	loader.shouldContinue = function () {
 		// Throttle downloads once we get enough.
-		return player.getQueueLength() < 9;
+		return player.getQueueLength() < 5;
 	};
 	
 	// Rerender on resize.
@@ -755,13 +779,14 @@ function WeeklyTrackLoader(user) {
 						return spotify('search', {
 							'type': 'track',
 							'q': 'track:' + track.trackName + ' artist:' + track.artist,
-							'limit': 1
+							'limit': 1,
+							'market': 'US'
 						});
 					})
 					.then(interrupt)
 					.then(function (result) {
 						var results = result['tracks']['items'];
-						if (results.length && interrupt.running) {
+						if (results.length && interrupt.running && results[0].preview_url) {
 							track.spotify = results[0];
 							return self.onTrackLoaded(track);
 						}
@@ -999,6 +1024,11 @@ window.onload = function () {
 		return false;
 	};
 	
+	if (window.hash.location.replace(/^#/, '').indexOf('access_token=') === 0) {
+		localStorage['spotifyaccesstoken'] = hash.slice('access_token='.length).split('&')[0];
+		window.location.hash = '';
+	}
+	
 	var controller;
 	window.onhashchange = function () {
 		var user = window.location.hash.replace(/^#/, '');
@@ -1012,7 +1042,6 @@ window.onload = function () {
 			}).catch(function () {});
 		}
 	};
-	
 	window.onhashchange();
 
 	// Set a default.
